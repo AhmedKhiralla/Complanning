@@ -31,6 +31,7 @@ import { SalesPlan } from "./pages/planning/SalesPlan";
 import { StockPage } from "./pages/planning/Stock";
 import { Plans } from "./pages/plans/Plans";
 import { PlanView } from "./pages/plans/PlanView";
+import { ComparePlans } from "./pages/plans/Compare";
 
 function NotFound() {
   const { t } = useI18n();
@@ -53,6 +54,7 @@ function Routes() {
   const gate = (ok: boolean, el: ReactElement) => (ok ? el : <Forbidden />);
   const tenantUser = !!me.tenant;
   let m: Record<string, string> | null;
+  if (path === "/plans/compare") return gate(tenantUser, <ComparePlans key={window.location.search} />);
   if ((m = match("/plans/:id", path))) return gate(tenantUser, <PlanView key={m.id} planId={m.id} />);
   if ((m = match("/master/boms/:id", path))) return gate(tenantUser, <BomEditor key={m.id} itemId={m.id} />);
   if ((m = match("/master/routings/:id", path))) return gate(tenantUser, <RoutingEditor key={m.id} itemId={m.id} />);

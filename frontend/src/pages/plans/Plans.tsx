@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type ReactElement } from "react";
-import { LuChartGantt, LuClock, LuGauge, LuPlay, LuPlus, LuTarget, LuWallet } from "react-icons/lu";
+import { LuChartGantt, LuCheck, LuClock, LuColumns3, LuGauge, LuPlay, LuPlus, LuTarget, LuWallet } from "react-icons/lu";
 import { Badge, Button, Empty, Field, LoadError, Notice, PageHead, Sheet, Switch, TextField, errorText, useLoad, useToast } from "../../components/ui";
 import { NumberField } from "../../components/master";
 import { useFeature } from "../../components/rules";
@@ -10,7 +10,8 @@ import { usePerms } from "../../lib/session";
 
 export type Objective = "on_time" | "sales_value" | "utilization";
 export interface PlanRow {
-  id: string; site_id: string; name: string; status: "draft" | "archived"; objective: Objective; horizon_start: string; horizon_end: string;
+  id: string; site_id: string; name: string; status: "draft" | "released" | "archived"; locks: unknown[];
+  released_at: string | null; released_by_name: string | null; replanned_at: string | null; objective: Objective; horizon_start: string; horizon_end: string;
   plan_date: string; starts_at: string; options: Record<string, unknown>; notes: string | null; created_at: string; created_by_name: string | null;
   kpis: null | {
     batches: number; scheduled: number; unscheduled: number; demand_lines: number; on_time: number; late: number; unfilled: number;
@@ -116,6 +117,8 @@ export function Plans() {
   const { planSite, site, siteId } = usePerms();
   const [showArchived, setShowArchived] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const toggle = (id: string) => setPicked((s) => (s.includes(id) ? s.filter((x) => x !== id) : s.length >= 3 ? s : [...s, id]));
   const data = useLoad(() => (siteId ? get<{ items: PlanRow[] }>(`/api/sites/${siteId}/plans`) : Promise.resolve(null)), [siteId]);
   if (!siteId) return <><PageHead title={t("plans.title")} /><Notice>{t("common.noSite")}</Notice></>;
   const canEdit = planSite(siteId);
@@ -125,7 +128,10 @@ export function Plans() {
   return (
     <>
       <PageHead title={t("plans.title")} lead={t("plans.lead", { site: site?.name ?? "" })}
-        actions={canEdit && <Button variant="primary" icon={<LuPlus />} onClick={() => setCreating(true)}>{t("plans.new")}</Button>} />
+        actions={<>
+          {picked.length >= 2 && <Button icon={<LuColumns3 />} onClick={() => navigate(`/plans/compare?ids=${picked.join(",")}`)}>{t("cmp.compare", { n: picked.length })}</Button>}
+          {canEdit && <Button variant="primary" icon={<LuPlus />} onClick={() => setCreating(true)}>{t("plans.new")}</Button>}
+        </>} />
       {!canEdit && <Notice>{t("plans.readOnly")}</Notice>}
       {data.error ? <LoadError error={data.error} onRetry={data.reload} /> : data.data && all.length === 0 ? (
         <div className="panel"><Empty icon={<LuChartGantt />} title={t("plans.empty")} body={t("plans.emptyBody")}
@@ -149,6 +155,12 @@ export function Plans() {
                       <span className="small muted">{t(`obj.${p.objective}` as never)} · {date(p.horizon_start, "UTC")} – {date(p.horizon_end, "UTC")}</span>
                     </div>
                     {p.status === "archived" && <Badge>{t("plans.archived")}</Badge>}
+                    {p.status === "released" && <Badge tone="ok" dot>{t("pv.st.released")}</Badge>}
+                    {all.length > 1 && <span className={`pick ${picked.includes(p.id) ? "on" : ""}`} role="checkbox" aria-checked={picked.includes(p.id)}
+                      aria-label={t("cmp.select")} title={t("cmp.select")} tabIndex={0}
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggle(p.id); }}
+                      onKeyDown={(e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); e.stopPropagation(); toggle(p.id); } }}>
+                      <LuCheck aria-hidden /></span>}
                   </div>
                   {k && <div className="stats">
                     <span className={`ring ${pct === null ? "" : pct >= 95 ? "good" : pct >= 75 ? "mid" : "bad"}`} style={{ "--p": `${pct ?? 0}` } as CSSProperties}>

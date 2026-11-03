@@ -1,13 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
-  LuArchive, LuArchiveRestore, LuArrowLeft, LuSprayCan, LuChartGantt, LuCircleAlert, LuCircleCheck, LuEllipsis, LuFileSpreadsheet, LuPencil, LuTrash2, LuX,
+  LuArchive, LuArchiveRestore, LuArrowLeft, LuSprayCan, LuLock, LuLockOpen, LuRefreshCw, LuSend, LuUndo2, LuChartGantt, LuCircleAlert, LuCircleCheck, LuEllipsis, LuFileSpreadsheet, LuPencil, LuTrash2, LuX,
 } from "react-icons/lu";
 import {
   Badge, Button, Confirm, Dialog, Empty, LoadError, Menu, MenuItem, Notice, TextField, errorText, useLoad, useToast,
 } from "../../components/ui";
 import { TypeBadge } from "../../components/master";
 import { useDuration } from "../../components/rules";
-import { del, get, patch } from "../../lib/api";
+import { del, get, patch, post } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { Link, navigate } from "../../lib/router";
 import { usePerms, useSession } from "../../lib/session";
@@ -19,11 +19,13 @@ interface PBatch {
   cleaning_group: string | null; uom: string; level: number; quantity: number; bom_version: number | null; need_by: string | null;
   start_at: string | null; end_at: string | null; available_at: string | null; ship_at: string | null;
   status: "scheduled" | "unscheduled"; problem: string | null; value: number | null; currency: string | null;
+  ordinal: number; locked: boolean;
 }
 interface POp {
   id: string; batch_id: string; seq: number; step_name: string; resource_id: string; changeover_start: string | null;
   changeover_end: string | null; changeover_minutes: number; wait_minutes: number; changeover_kind: string | null;
   verification: string | null; reclean_minutes: number; start_at: string; end_at: string; work_minutes: number;
+  locked: boolean; eligible: string[];
 }
 interface PDemand {
   id: string; item_id: string; code: string; name_en: string; name_ar: string | null; uom: string; market: string; month: string;
@@ -65,11 +67,19 @@ function midnights(a: number, b: number, tz: string): number[] {
   return out;
 }
 
-function Gantt({ plan, tz, selected, onSelect }: { plan: PlanFull; tz: string; selected: string | null; onSelect: (id: string | null) => void }) {
+interface Drag { op: POp; dx: number; rowId: string; }
+
+function Gantt({ plan, tz, selected, onSelect, editable, onMove }: {
+  plan: PlanFull; tz: string; selected: string | null; onSelect: (id: string | null) => void;
+  editable: boolean; onMove: (op: POp, resourceId: string, startIso: string) => void;
+}) {
   const { t, lang, dateTime } = useI18n();
   const dur = useDuration();
   const [zoom, setZoom] = useState<Zoom>("week");
   const scroller = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const pointer = useRef<{ op: POp; x0: number; y0: number; moved: boolean } | null>(null);
+  const [drag, setDrag] = useState<Drag | null>(null);
   const batches = useMemo(() => new Map(plan.batches.map((b) => [b.id, b])), [plan.batches]);
   const groups = useMemo(() => {
     const gs = Array.from(new Set(plan.batches.map((b) => b.cleaning_group ?? "").filter(Boolean))).sort();
@@ -104,6 +114,24 @@ function Gantt({ plan, tz, selected, onSelect }: { plan: PlanFull; tz: string; s
   });
   const isFriSat = (d: number) => { const wd = new Date(d + 12 * HOUR + tzOffset(d, tz) * 60000).getUTCDay(); return wd === 5; };
 
+  // Row positions inside the chart body: area header rows are 24 px, machine rows 36 px.
+  const rows: { id: string | null; top: number; h: number }[] = [];
+  let y = 0;
+  for (const a of areas) {
+    rows.push({ id: null, top: y, h: 24 }); y += 24;
+    for (const m of plan.machines.filter((mm) => (mm.area ?? "") === a)) { rows.push({ id: m.id, top: y, h: 36 }); y += 36; }
+  }
+  const rowAt = (clientY: number) => {
+    const top = body.current?.getBoundingClientRect().top ?? 0;
+    const yy = clientY - top;
+    return rows.find((r) => r.id && yy >= r.top && yy < r.top + r.h)?.id ?? null;
+  };
+  const rowTop = (id: string) => rows.find((r) => r.id === id)?.top ?? 0;
+  const dropStart = (d: Drag) => {
+    const raw = ms(d.op.start_at) + (d.dx / px) * HOUR;
+    return Math.round(raw / (15 * 60000)) * 15 * 60000;
+  };
+
   useEffect(() => {
     const el = scroller.current;
     if (el) el.scrollLeft = Math.max(0, x(Math.max(now, t0)) - 80);
@@ -130,7 +158,7 @@ function Gantt({ plan, tz, selected, onSelect }: { plan: PlanFull; tz: string; s
           {Array.from(groups.entries()).map(([g, i]) => <span key={g}><i className={`lg tone-${i}`} />{g}</span>)}
         </div>
         <span className="spacer" />
-        <span className="small subtle">{selected ? "" : t("pv.selectHint")} {t("pv.timesIn", { tz })}</span>
+        <span className="small subtle">{editable ? t("pv.dragHint") : selected ? "" : t("pv.selectHint")} {t("pv.timesIn", { tz })}</span>
       </div>
       <div className="gantt" dir="ltr">
         <div className="g-names">
@@ -156,7 +184,7 @@ function Gantt({ plan, tz, selected, onSelect }: { plan: PlanFull; tz: string; s
                 ))}
               </div>
             </div>
-            <div className="g-body" onClick={(e) => { if (e.target === e.currentTarget) onSelect(null); }}>
+            <div className={`g-body ${drag ? "dragging" : ""}`} ref={body} onClick={(e) => { if (e.target === e.currentTarget) onSelect(null); }}>
               {days.slice(0, -1).map((d, i) => isFriSat(d) && <div key={d} className="g-off" style={{ left: x(d), width: x(days[i + 1]) - x(d) }} />)}
               {days.map((d) => <div key={"l" + d} className="g-line" style={{ left: x(d) }} />)}
               {now > t0 && now < t1 && <div className="g-now" style={{ left: x(now) }}><span>{t("pv.today")}</span></div>}
@@ -165,7 +193,7 @@ function Gantt({ plan, tz, selected, onSelect }: { plan: PlanFull; tz: string; s
                 <Fragment key={a || "none"}>
                   <div className="g-row area" />
                   {plan.machines.filter((m) => (m.area ?? "") === a).map((m) => (
-                    <div key={m.id} className="g-row">
+                    <div key={m.id} className={`g-row ${drag ? (drag.op.eligible.includes(m.id) ? "drop-ok" : "drop-no") : ""} ${drag?.rowId === m.id ? "hover" : ""}`}>
                       {plan.downtime.filter((dt) => dt.resource_id === m.id).map((dt, i) => (
                         <div key={i} className="g-down" style={{ left: x(ms(dt.starts_at)), width: Math.max(2, x(ms(dt.ends_at)) - x(ms(dt.starts_at))) }}
                           title={`${t(`reason.${dt.reason}` as never)}: ${dateTime(dt.starts_at, tz)} → ${dateTime(dt.ends_at, tz)}`} />
@@ -182,9 +210,37 @@ function Gantt({ plan, tz, selected, onSelect }: { plan: PlanFull; tz: string; s
                               <div className={`g-co ${dim ? "dim" : ""}`} style={{ left: x(cs), width: Math.max(1, x(ce - wait) - x(cs)) }} title={tip(o, b)} />
                               {wait > 0 && <div className={`g-wait ${dim ? "dim" : ""}`} style={{ left: x(ce - wait), width: Math.max(1, x(ce) - x(ce - wait)) }} title={tip(o, b)} />}
                             </>}
-                            <button type="button" className={`g-op ${tone} lvl-${Math.min(b.level, 3)} ${dim ? "dim" : ""} ${selected === b.id ? "sel" : ""}`}
-                              style={{ left: x(ms(o.start_at)), width: Math.max(3, w) }} title={tip(o, b)}
-                              onClick={(e) => { e.stopPropagation(); onSelect(selected === b.id ? null : b.id); }}>
+                            <button type="button" className={`g-op ${tone} lvl-${Math.min(b.level, 3)} ${dim ? "dim" : ""} ${selected === b.id ? "sel" : ""} ${b.locked ? "locked" : ""} ${editable ? "movable" : ""} ${drag?.op.id === o.id ? "origin" : ""}`}
+                              style={{ left: x(ms(o.start_at)), width: Math.max(3, w) }} title={tip(o, b) + (b.locked ? `\n${t("pv.locked")}` : "")}
+                              onPointerDown={(e) => {
+                                if (e.button !== 0) return;
+                                pointer.current = { op: o, x0: e.clientX, y0: e.clientY, moved: false };
+                                if (editable) e.currentTarget.setPointerCapture(e.pointerId);
+                              }}
+                              onPointerMove={(e) => {
+                                const pt = pointer.current;
+                                if (!pt || pt.op.id !== o.id || !editable) return;
+                                const dx = e.clientX - pt.x0, dy = e.clientY - pt.y0;
+                                if (!pt.moved && Math.hypot(dx, dy) < 5) return;
+                                pt.moved = true;
+                                setDrag({ op: o, dx, rowId: rowAt(e.clientY) ?? o.resource_id });
+                              }}
+                              onPointerUp={(e) => {
+                                const pt = pointer.current;
+                                pointer.current = null;
+                                e.stopPropagation();
+                                if (pt?.moved && drag) {
+                                  const d = drag;
+                                  setDrag(null);
+                                  if (d.op.eligible.includes(d.rowId)) onMove(d.op, d.rowId, new Date(dropStart(d)).toISOString());
+                                  return;
+                                }
+                                setDrag(null);
+                                onSelect(selected === b.id ? null : b.id);
+                              }}
+                              onPointerCancel={() => { pointer.current = null; setDrag(null); }}
+                              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(selected === b.id ? null : b.id); } }}>
+                              {b.locked && w > 16 && <LuLock className="lk" aria-hidden />}
                               {w > 46 && <span>{b.batch_no}{w > 120 ? ` · ${b.code}` : ""}</span>}
                             </button>
                           </Fragment>
@@ -194,6 +250,17 @@ function Gantt({ plan, tz, selected, onSelect }: { plan: PlanFull; tz: string; s
                   ))}
                 </Fragment>
               ))}
+              {drag && (() => {
+                const b = batches.get(drag.op.batch_id)!;
+                const ok = drag.op.eligible.includes(drag.rowId);
+                const st = dropStart(drag);
+                const w = x(ms(drag.op.end_at)) - x(ms(drag.op.start_at));
+                return (
+                  <div className={`g-ghost ${ok ? "" : "bad"}`} style={{ left: x(st), top: rowTop(drag.rowId) + 6, width: Math.max(3, w) }}>
+                    <span>{b.batch_no} · {ok ? dateTime(new Date(st).toISOString(), tz) : t("pv.notQualified")}</span>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -202,7 +269,9 @@ function Gantt({ plan, tz, selected, onSelect }: { plan: PlanFull; tz: string; s
   );
 }
 
-function BatchDetail({ plan, id, tz, onSelect }: { plan: PlanFull; id: string; tz: string; onSelect: (id: string | null) => void }) {
+function BatchDetail({ plan, id, tz, onSelect, editable, onLock }: {
+  plan: PlanFull; id: string; tz: string; onSelect: (id: string | null) => void; editable: boolean; onLock: (id: string, locked: boolean) => void;
+}) {
   const { t, lang, qty, dateTime } = useI18n();
   const dur = useDuration();
   const b = plan.batches.find((x) => x.id === id);
@@ -225,6 +294,10 @@ function BatchDetail({ plan, id, tz, onSelect }: { plan: PlanFull; id: string; t
           <span className="small muted">{nameOf(b, lang)} · {qty(b.quantity, 1)} {b.uom}{b.bom_version ? ` · BOM v${b.bom_version}` : ""}</span>
         </div>
         <span className="spacer" />
+        {b.locked && <Badge tone="brand"><LuLock /> {t("pv.locked")}</Badge>}
+        {editable && b.status === "scheduled" && (b.locked
+          ? <Button size="sm" icon={<LuLockOpen />} onClick={() => onLock(b.id, false)}>{t("pv.unlock")}</Button>
+          : <Button size="sm" icon={<LuLock />} onClick={() => onLock(b.id, true)} title={t("pv.lockedHint")}>{t("pv.lock")}</Button>)}
         <Button size="sm" variant="ghost" iconOnly icon={<LuX />} aria-label={t("pv.close")} onClick={() => onSelect(null)} />
       </div>
       <div className="panel-body bd-grid">
@@ -268,6 +341,10 @@ function warnText(w: Warning, t: ReturnType<typeof useI18n>["t"], qty: ReturnTyp
     case "unscheduled": return t("pv.w.unscheduled", { code: String(w.code), reason: t(`pv.problem.${w.reason}` as never) });
     case "after_horizon": return t("pv.w.after_horizon", { n: String(w.count) });
     case "no_shifts": return t("pv.w.no_shifts");
+    case "lock_overlap": return t("pv.w.lock_overlap", { code: String(w.code), machine: String(w.machine), other: String(w.other) });
+    case "lock_no_changeover": return t("pv.w.lock_no_changeover", { code: String(w.code), machine: String(w.machine), minutes: n(w.minutes) });
+    case "lock_inputs_late": return t("pv.w.lock_inputs_late", { code: String(w.code), input: String(w.input), hours: n(w.hours) });
+    case "lock_lost": return t("pv.w.lock_lost", { code: String(w.code) });
     default: return w.kind;
   }
 }
@@ -285,6 +362,8 @@ export function PlanView({ planId }: { planId: string }) {
   const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [releasing, setReleasing] = useState(false);
   if (data.error) return <>
     <Link to="/plans" className="back-link"><LuArrowLeft /> {t("pv.back")}</Link>
     {(data.error as { status?: number }).status === 404
@@ -296,12 +375,26 @@ export function PlanView({ planId }: { planId: string }) {
   const tz = me?.sites.find((x) => x.id === p.site_id)?.timezone ?? "UTC";
   const k = p.kpis!;
   const canEdit = planSite(p.site_id);
+  const editable = canEdit && p.status === "draft";
+  const act = async (fn: () => Promise<{ focus?: string | null } | unknown>, done: string) => {
+    setBusy(true); setErr(null);
+    try {
+      const r = (await fn()) as { focus?: string | null } | undefined;
+      await data.reload();
+      if (r && r.focus) setSelected(r.focus);
+      toast(t(done as never));
+    } catch (e) { setErr(errorText(e, t)); }
+    setBusy(false);
+  };
+  const move = (op: POp, resourceId: string, startIso: string) =>
+    act(() => post(`/api/plans/${p.id}/move`, { batch_id: op.batch_id, seq: op.seq, resource_id: resourceId, start_at: startIso }), "pv.replanned");
+  const lock = (batchId: string, locked: boolean) => act(() => post(`/api/plans/${p.id}/lock`, { batch_id: batchId, locked }), "pv.replanned");
   const save = async (body: Record<string, unknown>) => {
     try { const r = await patch<PlanRow>(`/api/plans/${p.id}`, body); data.setData({ ...p, ...r }); toast(t("pv.saved")); }
     catch (e) { setErr(errorText(e, t)); }
   };
   const warnings = k.warnings ?? [];
-  const lateLabel = (h: number) => t("pv.st.late", { d: h >= 24 ? `${qty(h / 24, 1)} d` : `${qty(h, 0)} h` });
+  const lateLabel = (h: number) => t("pv.st.late", { d: h >= 24 ? t("pv.nDays", { n: qty(h / 24, 1) }) : t("pv.nHours", { n: qty(h, 0) }) });
 
   return (
     <>
@@ -309,12 +402,19 @@ export function PlanView({ planId }: { planId: string }) {
       <div className="page-head">
         <div className="titles">
           <h1 className="row" style={{ gap: 10 }}><span className={`obj obj-${p.objective}`}>{OBJ_ICON[p.objective]}</span>{p.name}
-            {p.status === "archived" && <Badge>{t("plans.archived")}</Badge>}</h1>
+            {p.status === "archived" ? <Badge>{t("plans.archived")}</Badge> : p.status === "released"
+              ? <Badge tone="ok" dot>{t("pv.st.released")}</Badge> : <Badge>{t("pv.st.draft")}</Badge>}
+            {(p.locks?.length ?? 0) > 0 && <Badge tone="brand"><LuLock /> {t("pv.locks", { n: p.locks.length })}</Badge>}</h1>
           <p>{t("pv.meta", { objective: t(`obj.${p.objective}` as never), from: date(p.horizon_start, "UTC"), to: date(p.horizon_end, "UTC"), date: date(p.plan_date, "UTC") })}
             <br /><span className="small subtle">{t("pv.createdBy", { name: p.created_by_name ?? "—", when: dateTime(p.created_at, tz) })}
-              {" · "}{t("pv.kpi.runtime", { s: qty(k.runtime_ms / 1000, 1), n: k.runs })}</span></p>
+              {" · "}{t("pv.kpi.runtime", { s: qty(k.runtime_ms / 1000, 1), n: k.runs })}
+              {p.status === "released" && p.released_at && <><br />{t("pv.releasedBy", { name: p.released_by_name ?? "—", when: dateTime(p.released_at, tz) })}</>}</span></p>
         </div>
         <div className="actions">
+          {editable && <Button icon={<LuRefreshCw />} busy={busy} title={t("pv.replanHint")}
+            onClick={() => act(() => post(`/api/plans/${p.id}/replan`), "pv.replanned")}>{t("pv.replan")}</Button>}
+          {canEdit && p.status === "draft" && <Button variant="primary" icon={<LuSend />} onClick={() => setReleasing(true)}>{t("pv.release")}</Button>}
+          {canEdit && p.status === "released" && <Button icon={<LuUndo2 />} onClick={() => save({ status: "draft" })}>{t("pv.reopen")}</Button>}
           <a className="btn" href={`/api/plans/${p.id}/export`}><LuFileSpreadsheet />{t("pv.export")}</a>
           {canEdit && <Menu trigger={(pr) => <Button iconOnly icon={<LuEllipsis />} aria-label={t("common.actions")} {...pr} />}>
             {(close) => <>
@@ -353,8 +453,12 @@ export function PlanView({ planId }: { planId: string }) {
       </div>
 
       {tab === "gantt" && <>
-        <div className="panel"><Gantt plan={p} tz={tz} selected={selected} onSelect={setSelected} /></div>
-        {selected && <BatchDetail plan={p} id={selected} tz={tz} onSelect={setSelected} />}
+        {canEdit && p.status === "released" && <Notice>{t("pv.readonlyHint", { status: t("pv.st.released").toLowerCase() })}</Notice>}
+        <div className="panel gantt-panel">
+          <Gantt plan={p} tz={tz} selected={selected} onSelect={setSelected} editable={editable && !busy} onMove={move} />
+          {busy && <div className="replanning"><span className="spinner" aria-hidden />{t("pv.replanning")}</div>}
+        </div>
+        {selected && <BatchDetail plan={p} id={selected} tz={tz} onSelect={setSelected} editable={editable && !busy} onLock={lock} />}
       </>}
 
       {tab === "deliveries" && <div className="panel"><div className="table-wrap"><table className="table">
@@ -428,6 +532,8 @@ export function PlanView({ planId }: { planId: string }) {
         <Button onClick={() => setRenaming(false)}>{t("common.cancel")}</Button>
         <Button variant="primary" disabled={!name.trim()} onClick={async () => { await save({ name: name.trim() }); setRenaming(false); }}>{t("common.save")}</Button>
       </>}><TextField label={t("np.name")} value={name} maxLength={120} onChange={setName} /></Dialog>}
+      {releasing && <Confirm title={t("pv.releaseTitle")} body={t("pv.releaseBody")} confirmLabel={t("pv.release")} onClose={() => setReleasing(false)}
+        onConfirm={async () => { await post(`/api/plans/${p.id}/release`); await data.reload(); toast(t("pv.released")); }} />}
       {deleting && <Confirm danger title={t("pv.deleteTitle")} body={t("pv.deleteBody")} confirmLabel={t("pv.delete")} onClose={() => setDeleting(false)}
         onConfirm={async () => { await del(`/api/plans/${p.id}`); toast(t("pv.deleted")); navigate("/plans"); }} />}
     </>

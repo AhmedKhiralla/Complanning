@@ -78,6 +78,8 @@ class Batch:
     value: float = 0.0
     currency: str | None = None
     problem: str | None = None                 # no_bom, no_routing, no_machine
+    ordinal: int = 0                           # nth batch of this item in the plan; locks refer to it
+    lock: dict | None = None                   # {"start": datetime, "machines": {seq: resource_id}}
 
 
 @dataclass
@@ -137,7 +139,7 @@ def _release_delay(item: dict, at_risk: bool, rules: dict) -> dt.timedelta:
 
 
 def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, objective: str, options: dict,
-               features: dict, now: dt.datetime, plan_date: dt.date) -> Plan:
+               features: dict, now: dt.datetime, plan_date: dt.date, locks: list[dict] | None = None) -> Plan:
     tz = ZoneInfo(site["timezone"] or "UTC")
     warnings: list[dict] = []
     rules = {
@@ -373,6 +375,32 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
         for pool in pools.values():
             pool["unlimited"] = True
 
+    # Ordinals and locks. A lock fixes a batch's start and machines; what feeds it must be ready in time.
+    seen: dict[str, int] = defaultdict(int)
+    for b in batches:
+        seen[b.item_id] += 1
+        b.ordinal = seen[b.item_id]
+    by_ord = {(b.item_id, b.ordinal): b for b in batches}
+    for lk in locks or []:
+        b = by_ord.get((str(lk["item_id"]), int(lk["ordinal"])))
+        if not b or not b.steps:
+            warnings.append({"kind": "lock_lost", "code": items.get(str(lk["item_id"]), {}).get("code", "?"), "ordinal": lk["ordinal"]})
+            continue
+        b.lock = {"start": _naive(lk["start"]), "machines": {int(k): str(v) for k, v in (lk.get("machines") or {}).items()}}
+        b.need_by = min(b.need_by, b.lock["start"])
+    # What feeds a locked batch gets an earlier deadline when needed, down the chain.
+    pushed = {b.key for b in batches if b.lock}
+    for b in sorted(batches, key=lambda x: x.level):
+        if b.key not in pushed:
+            continue
+        eff = b.lock["start"] if b.lock else b.need_by
+        for sup, _q in b.suppliers:
+            lead = sum(min(o.minutes for o in st.options) for st in sup.steps) / (60 * 16) + 1 if sup.steps else 1
+            want = eff - _release_delay(items[sup.item_id], bool(options.get("release_at_risk")), rules) - dt.timedelta(days=lead)
+            if want < sup.need_by:
+                sup.need_by = want
+                pushed.add(sup.key)
+
     # Just in time below material waits: when a batch must wait for a material delivery, the batches that
     # feed it start no earlier than needed, so intermediates are not made months ahead and held too long.
     sim = {k: dict(v) for k, v in pools.items()}
@@ -397,6 +425,8 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
     limits: dict[int, list] = defaultdict(list)
     for b in sorted(batches, key=lambda x: x.level):
         own = gate.get(b.key, start)
+        if b.lock:
+            own = b.lock["start"]
         if limits.get(b.key):
             b.not_before = max(start, min(limits[b.key]))
             own = max(own, b.not_before)
@@ -409,7 +439,7 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
     if early is not None:
         for b in batches:
             # Only where a chain starts: later stages follow as soon as their inputs are released.
-            if not b.steps or b.suppliers:
+            if not b.steps or b.suppliers or b.lock:
                 continue
             lead = sum(min(o.minutes for o in st.options) for st in b.steps) / (60 * 16) + 1
             release = b.need_by - dt.timedelta(days=lead + float(early))
@@ -429,6 +459,12 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
                              "requested": d.requested, "quantity": d.quantity})
     return Plan(start, h_end, objective, batches, demand, machines, Resolver(tx, site["id"]), items, campaigns, rules, pools,
                 warnings, options)
+
+
+def _naive(v) -> dt.datetime:
+    if isinstance(v, str):
+        v = dt.datetime.fromisoformat(v.replace("Z", "+00:00"))
+    return to_naive_utc(v)
 
 
 def _peg(b: Batch, consumer, q: float) -> None:
@@ -455,6 +491,8 @@ class OpResult:
     start: dt.datetime
     end: dt.datetime
     run_minutes: float
+    prev: tuple | None = None          # (item_id, batch key) before this operation on the machine
+    locked: bool = False
 
 
 class Scheduler:
@@ -478,6 +516,8 @@ class Scheduler:
         self.campaign_breaks = 0
         self._cache: dict[tuple, tuple] = {}
         self._mver = {m: 0 for m in plan.machines}
+        self.locked_blocks: dict[str, list[dict]] = {m: [] for m in plan.machines}
+        self.lock_warnings: list[dict] = []
         self.max_value = max([b.value for b in plan.batches] + [1.0])
 
     # -- helpers
@@ -523,12 +563,13 @@ class Scheduler:
         mt, _ = self._materials(b, commit=False)
         return max(t, mt)
 
-    def _changeover(self, m: Machine, b: Batch, at: dt.datetime) -> tuple[float, float, str | None, str | None]:
-        last = self.last[m.id]
+    def _changeover(self, m: Machine, b: Batch, at: dt.datetime, prev: tuple | None = None,
+                    tracked: bool = True) -> tuple[float, float, str | None, str | None]:
+        last = prev
         if last is None or last[1] == b.key:
             return 0.0, 0.0, None, None
         last_item = last[0]
-        if last_item == b.item_id:
+        if last_item == b.item_id and tracked:
             camp = self.p.campaigns.get((b.item_id, m.id)) or self.p.campaigns.get((b.item_id, None))
             if camp:
                 too_many = camp["max_batches"] and self.run_count[m.id] >= camp["max_batches"]
@@ -550,13 +591,39 @@ class Scheduler:
         return work, wait, kind, r["verification"] if self.p.rules["verification"] else "none"
 
     def _evaluate(self, b: Batch, opt: Option, ready: dt.datetime) -> OpResult | None:
+        """Earliest placement on the machine after its last planned operation, in a gap that also leaves
+        room for the changeover into the next locked batch."""
         m = opt.machine
         key = (b.key, m.id, self.next_step[b.key])
         cached = self._cache.get(key)
         if cached and cached[0] == self._mver[m.id] and cached[1] == ready:
             return cached[2]
-        free = self.free[m.id]
-        work, wait, kind, ver = self._changeover(m, b, max(free, ready))
+        g_start, prev, tracked = self.free[m.id], self.last[m.id], True
+        blocks = [x for x in self.locked_blocks[m.id] if x["end"] > g_start]
+        i = 0
+        res = None
+        while True:
+            while i < len(blocks) and blocks[i]["start"] <= g_start:
+                if blocks[i]["end"] > g_start:
+                    g_start, prev, tracked = blocks[i]["end"], (blocks[i]["item"], blocks[i]["key"]), False
+                i += 1
+            res = self._place(b, opt, ready, m, g_start, prev, tracked)
+            if res is None:
+                break
+            nxt = blocks[i] if i < len(blocks) else None
+            if nxt is None:
+                break
+            w2, wait2, _k, _v = self._changeover(m, nxt["batch"], res.end, (b.item_id, b.key), False)
+            if res.end + dt.timedelta(minutes=w2 + wait2) <= nxt["start"]:
+                break
+            g_start, prev, tracked = nxt["end"], (nxt["item"], nxt["key"]), False
+            i += 1
+        self._cache[key] = (self._mver[m.id], ready, res)
+        return res
+
+    def _place(self, b: Batch, opt: Option, ready: dt.datetime, m: Machine, free: dt.datetime, prev: tuple | None,
+               tracked: bool) -> OpResult | None:
+        work, wait, kind, ver = self._changeover(m, b, max(free, ready), prev, tracked)
         co_start = co_end = None
         clean_at = free
         if work > 0 or wait > 0:
@@ -572,7 +639,7 @@ class Scheduler:
         if start is None:
             return None
         reclean = 0.0
-        if m.clean_hold_h and self.last[m.id] is not None and self.last[m.id][1] != b.key and \
+        if m.clean_hold_h and prev is not None and prev[1] != b.key and \
                 (start - clean_at) > dt.timedelta(hours=m.clean_hold_h):
             sp = self.p.resolver._pick(m.id, lambda r: r["kind"] == "same_product")
             reclean = float(sp["cleaning_minutes"]) if sp else 30.0
@@ -590,9 +657,7 @@ class Scheduler:
             end = m.cal.add_work(start, opt.minutes)
         if end is None:
             return None
-        res = OpResult(b, step, m, co_start, co_end, work, wait, kind, ver, reclean, start, end, opt.minutes)
-        self._cache[key] = (self._mver[m.id], ready, res)
-        return res
+        return OpResult(b, step, m, co_start, co_end, work, wait, kind, ver, reclean, start, end, opt.minutes, prev)
 
     def _priority(self, r: OpResult) -> float:
         b = r.batch
@@ -625,7 +690,7 @@ class Scheduler:
                     self.hold_warnings.append({"kind": "hold_exceeded", "code": s.code, "key": s.key, "consumer": b.code,
                                                "hours": (r.start - d["end"]).total_seconds() / 3600, "limit": float(hmax),
                                                "quantity": q, "uom": s.uom})
-        last = self.last[m.id]
+        last = r.prev
         if r.co_kind == "campaign_end":
             self.campaign_breaks += 1
         if last and last[0] == b.item_id and r.co_kind != "campaign_end":
@@ -650,8 +715,81 @@ class Scheduler:
                 ship = r.end + dt.timedelta(days=float(it["release_lead_days"] or 0))
             self.done[b.key] = {"start": first, "end": r.end, "available": r.end + self._release(b), "ship": ship}
 
+    def _place_locked(self) -> None:
+        """Put locked batches exactly where the planner wants them, before anything else."""
+        for b in sorted((x for x in self.p.batches if x.lock and not x.problem), key=lambda x: x.lock["start"]):
+            t = b.lock["start"]
+            placed = []
+            for step in b.steps:
+                want = b.lock["machines"].get(step.seq)
+                opt = next((o for o in step.options if o.machine.id == want), step.options[0])
+                m = opt.machine
+                s0 = m.cal.next_work(t)
+                if s0 is not None and step.uninterrupted:
+                    s0 = m.cal.fit(s0, opt.minutes)
+                if s0 is None:
+                    break
+                e = s0 + dt.timedelta(minutes=opt.minutes) if step.uninterrupted else m.cal.add_work(s0, opt.minutes)
+                if e is None:
+                    break
+                placed.append(OpResult(b, step, m, None, None, 0.0, 0.0, None, None, 0.0, s0, e, opt.minutes, None, True))
+                t = e
+            if len(placed) < len(b.steps):
+                self.failed[b.key] = "no_capacity"
+                continue
+            _r, notes = self._materials(b, commit=True)
+            self.material_notes[b.key] = notes
+            for o in placed:
+                self.ops.append(o)
+                self.locked_blocks[o.machine.id].append({"start": o.start, "end": o.end, "item": b.item_id, "key": b.key,
+                                                         "batch": b, "op": o})
+            for blocks in self.locked_blocks.values():
+                blocks.sort(key=lambda x: x["start"])
+            self.next_step[b.key] = len(b.steps)
+            self.step_end[b.key] = placed[-1].end
+            it = self.p.items[b.item_id]
+            ship = placed[-1].end
+            if b.type == "finished" and it["test_before_sale"] and self.p.rules["qc_lead_times"]:
+                ship = ship + dt.timedelta(days=float(it["release_lead_days"] or 0))
+            self.done[b.key] = {"start": placed[0].start, "end": placed[-1].end, "available": placed[-1].end + self._release(b), "ship": ship}
+
+    def _finish_locked(self) -> None:
+        """Changeovers into locked batches, and checks that they fit and that their inputs are ready."""
+        by_m = defaultdict(list)
+        for o in self.ops:
+            by_m[o.machine.id].append(o)
+        for mid, ops in by_m.items():
+            ops.sort(key=lambda o: o.start)
+            for prev, o in zip([None] + ops[:-1], ops):
+                if not o.locked:
+                    continue
+                if prev is not None:
+                    if prev.end > o.start:
+                        self.lock_warnings.append({"kind": "lock_overlap", "code": o.batch.code, "key": o.batch.key,
+                                                   "machine": o.machine.code, "other": prev.batch.code})
+                        continue
+                    if prev.batch.key != o.batch.key:
+                        w, wait, kind, ver = self._changeover(o.machine, o.batch, o.start, (prev.batch.item_id, prev.batch.key), False)
+                        if w or wait:
+                            o.co_minutes, o.co_wait, o.co_kind, o.co_verification = w, wait, kind, ver
+                            o.co_end = o.start
+                            o.co_start = o.start - dt.timedelta(minutes=w + wait)
+                            if o.co_start < prev.end:
+                                self.lock_warnings.append({"kind": "lock_no_changeover", "code": o.batch.code, "key": o.batch.key,
+                                                           "machine": o.machine.code,
+                                                           "minutes": (prev.end - o.co_start).total_seconds() / 60})
+        for b in self.p.batches:
+            if not b.lock or b.key not in self.done:
+                continue
+            for s, _q in b.suppliers:
+                d = self.done.get(s.key)
+                if d and d["available"] > self.done[b.key]["start"]:
+                    self.lock_warnings.append({"kind": "lock_inputs_late", "code": b.code, "key": b.key, "input": s.code,
+                                               "hours": (d["available"] - self.done[b.key]["start"]).total_seconds() / 3600})
+
     def run(self) -> "Scheduler":
-        pending = [b for b in self.p.batches]
+        self._place_locked()
+        pending = [b for b in self.p.batches if not (b.lock and b.key in self.done)]
         for b in pending:
             if b.problem:
                 self.failed[b.key] = b.problem
@@ -704,6 +842,7 @@ class Scheduler:
             chosen = min(conflict or [t_star], key=self._priority)
             self._commit(chosen)
             pending = [b for b in pending if self.next_step[b.key] < len(b.steps) and b.key not in self.failed]
+        self._finish_locked()
         return self
 
     # -- results
@@ -794,7 +933,7 @@ def summarise(s: Scheduler, runtime_ms: int, runs: int) -> dict:
         if busy or co:
             util.append({"machine_id": m.id, "code": m.code, "available_hours": avail / 60, "busy_hours": busy / 60,
                          "changeover_hours": co / 60, "utilization": (busy + co) / avail if avail else None})
-    warnings = list(p.warnings) + s.hold_warnings
+    warnings = list(p.warnings) + s.lock_warnings + s.hold_warnings
     for b in p.batches:
         if b.key in s.failed:
             warnings.append({"kind": "unscheduled", "code": b.code, "key": b.key, "reason": s.failed[b.key]})

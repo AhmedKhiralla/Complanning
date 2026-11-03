@@ -129,6 +129,10 @@ API_ROUTES = [
     Route("/api/plans/{plan_id}", plans.update_plan, methods=["PATCH"]),
     Route("/api/plans/{plan_id}", plans.delete_plan, methods=["DELETE"]),
     Route("/api/plans/{plan_id}/export", plans.export_plan, methods=["GET"]),
+    Route("/api/plans/{plan_id}/move", plans.move_batch, methods=["POST"]),
+    Route("/api/plans/{plan_id}/lock", plans.lock_batch, methods=["POST"]),
+    Route("/api/plans/{plan_id}/replan", plans.replan, methods=["POST"]),
+    Route("/api/plans/{plan_id}/release", plans.release_plan, methods=["POST"]),
     # Excel and sample data
     Route("/api/master/template", excel.template, methods=["GET"]),
     Route("/api/master/import", excel.import_file, methods=["POST"]),

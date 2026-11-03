@@ -23,6 +23,11 @@ Released so far:
 - **Phase 5 – Planning engine**: production plans made by a finite-capacity scheduler for one of three
   objectives (on-time delivery, sales value, utilisation), with a Gantt chart per machine, deliveries
   against the sales plan, batch pegging across stages, warnings, machine utilisation and Excel export.
+  Steps can be marked "No pause".
+- **Phase 6 – Plan editing**: drag a batch on the chart to a new time or qualified machine; it is locked
+  there and the engine re-plans everything else around it. Lock and unlock batches, re-plan with the
+  current sales plan and stock, release one plan per site as the official plan, and compare two or
+  three plans side by side.
 
 The web app is English and Arabic (right-to-left), with light, dark and system themes.
 
@@ -195,7 +200,14 @@ frontend/
 - **Plans are kept.** Every run is stored with its options and results; rename, archive, delete and
   export are recorded in the audit trail.
 
+- **Editing rules.** Only draft plans change. A move shifts the whole batch so the dragged step starts
+  at the drop time (snapped to 15 minutes, then to the next working time); the batch's other steps follow
+  in order. Locked batches are placed first; unlocked operations are placed in the gaps, leaving room for
+  the changeover into the next locked batch. Locks that no longer fit (overlap, no time for the
+  changeover, inputs not released yet) are shown as warnings. Locks are stored with the plan, and every
+  move, lock, re-plan and release is in the audit trail.
+
 ## Next phase
 
-Phase 6 – Plan editing: move, lock and re-sequence batches on the Gantt chart, re-plan around locked
-batches, compare plans side by side, and release a plan.
+To be agreed: for example QC laboratory capacity, an ERP or warehouse connection, or plan reports for
+printing.
