@@ -88,7 +88,7 @@ def update_uom(call: Call):
 ITEM_COLS = ("code", "name_en", "name_ar", "type", "stock_uom_id", "dispensing_uom_id", "density_kg_per_l",
              "description", "grade", "dosage_form", "cleaning_group", "lead_time_days", "moq", "safety_stock",
              "qc_release_days", "shelf_life_months", "pack_size", "units_per_shipper", "standard_cost",
-             "test_before_sale", "release_lead_days", "active")
+             "test_before_sale", "release_lead_days", "active", "hold_min_hours", "hold_max_hours", "release_at_risk_allowed")
 
 ITEM_LIST_SQL = """
 SELECT i.id, i.code, i.name_en, i.name_ar, i.type, i.stock_uom_id, su.code AS stock_uom, i.dosage_form,
@@ -120,11 +120,19 @@ class ItemFields(BaseModel):
     test_before_sale: bool | None = None
     release_lead_days: Decimal | None = Field(default=None, ge=0, le=365)
     active: bool | None = None
+    hold_min_hours: Decimal | None = Field(default=None, ge=0, le=8760)
+    hold_max_hours: Decimal | None = Field(default=None, gt=0, le=8760)
+    release_at_risk_allowed: bool | None = None
 
     @field_validator("name_ar", "description", "grade", "dosage_form", "cleaning_group", mode="before")
     @classmethod
     def _blank(cls, v):
         return None if isinstance(v, str) and not v.strip() else v
+
+    @field_validator("cleaning_group")
+    @classmethod
+    def _group(cls, v):
+        return v.strip().upper() if isinstance(v, str) else v
 
 
 class ItemIn(ItemFields):
@@ -136,6 +144,12 @@ class ItemIn(ItemFields):
     @field_validator("code")
     @classmethod
     def _c(cls, v): return _code(v, 40).upper()
+
+
+def _check_group(call: Call, code: str | None) -> None:
+    if code and not call.tx.val("SELECT 1 FROM cleaning_groups WHERE code = %s", code):
+        raise ApiError(422, "invalid", "Some fields need attention.",
+                       fields={"cleaning_group": "Unknown cleaning group. Add it under Rules → Changeovers first."})
 
 
 def _check_uoms(call: Call, *ids: str | None) -> None:
@@ -200,6 +214,7 @@ def create_item(call: Call):
     if call.tx.val("SELECT 1 FROM items WHERE upper(code) = %s", b.code):
         raise ApiError(409, "duplicate", "Some fields need attention.", fields={"code": "This code is already used."})
     _check_uoms(call, b.stock_uom_id, b.dispensing_uom_id)
+    _check_group(call, b.cleaning_group)
     cols = [c for c in ITEM_COLS if c in b.model_fields_set or c in ("code", "name_en", "type", "stock_uom_id")]
     vals = [getattr(b, c) for c in cols]
     row = call.tx.one(f"INSERT INTO items (tenant_id, {', '.join(cols)}) VALUES (%s, {', '.join(['%s'] * len(cols))}) RETURNING id",
@@ -223,6 +238,10 @@ def update_item(call: Call):
         if used:
             raise ApiError(422, "unit_in_use", "The stock unit cannot change while the item is used in bills of materials.")
     _check_uoms(call, b.stock_uom_id, b.dispensing_uom_id)
+    if "cleaning_group" in b.model_fields_set:
+        _check_group(call, b.cleaning_group)
+    if b.hold_min_hours is not None and b.hold_max_hours is not None and b.hold_min_hours > b.hold_max_hours:
+        raise ApiError(422, "invalid", "Some fields need attention.", fields={"hold_min_hours": "Cannot be longer than the maximum hold."})
     patch_row(call, "items", iid, b, tuple(c for c in ITEM_COLS if c not in ("code", "type")))
     return _item_detail(call, iid)
 

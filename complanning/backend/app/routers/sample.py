@@ -217,6 +217,93 @@ ROUTINGS = {
 }
 
 
+GROUPS = [("PCM", "Paracetamol solids", "أقراص الباراسيتامول", "Low-potency oral solids"),
+          ("VITC", "Vitamin C liquids", "سوائل فيتامين سي", "Oral liquids, sugar based")]
+
+# kind, machine (None = all machines at the site), from, to, cleaning min, format min, verification, wait min, notes
+CHANGEOVERS = [
+    ("same_product", None, None, None, D(30), D(0), "visual", D(0), "Batch-to-batch line clearance"),
+    ("same_group", None, None, None, D(120), D(0), "visual", D(30), "Product change within a cleaning group"),
+    ("default", None, None, None, D(240), D(0), "rinse", D(240), "Any other product change"),
+    ("group_to_group", None, "PCM", "VITC", D(240), D(0), "swab", D(1440), "Swab results needed before the next product"),
+    ("group_to_group", None, "VITC", "PCM", D(300), D(0), "swab", D(1440), "Sugar residue: full wet clean and swab"),
+    ("same_group", "BLS-01", None, None, D(90), D(45), "visual", D(15), "Change parts for blister format"),
+    ("same_group", "BLS-02", None, None, D(90), D(45), "visual", D(15), "Change parts for blister format"),
+    ("product_pair", "CRT-01", "FG-PCM-20-EG", "FG-PCM-20-SA", D(15), D(20), "visual", D(0), "Artwork and leaflet change only"),
+    ("product_pair", "CRT-01", "FG-PCM-20-SA", "FG-PCM-20-EG", D(15), D(20), "visual", D(0), "Artwork and leaflet change only"),
+]
+
+# item, machine, max batches, max days, min batches
+CAMPAIGNS = [
+    ("WIP-PCM-BLEND", "GR-01", 6, D(5), None),
+    ("SF-PCM-BLS", "TP-01", 10, D(7), 2),
+    ("WIP-VITC-BULK", "MX-01", 3, D(3), None),
+    ("SF-VITC-120", "FIL-01", 4, D(4), None),
+]
+
+# item: hold min hours, hold max hours, release at risk allowed
+ITEM_TIMES = {
+    "WIP-PCM-BLEND": (D(0), D(72), True),
+    "SF-PCM-BLS": (D(0), D(720), False),
+    "WIP-VITC-BULK": (D(2), D(48), False),
+    "SF-VITC-120": (D(0), D(336), False),
+}
+
+# machine: dirty hold hours, clean hold hours (all other machines: 24 h dirty, 72 h clean)
+HOLDS = {"FBD-01": (D(12), D(48)), "MX-01": (D(8), D(48)), "MX-02": (D(8), D(48)), "FIL-01": (D(8), D(48))}
+
+
+def apply_sample_rules(call: Call, site_id: str) -> dict:
+    """Add the sample rules for the sample products that exist in this company."""
+    tx, tenant = call.tx, call.tenant_id
+    items = {r["code"]: str(r["id"]) for r in tx.q("SELECT id, code FROM items")}
+    machines = {r["code"]: str(r["id"]) for r in tx.q("SELECT id, code FROM resources WHERE site_id = %s::uuid", site_id)}
+    needed = {"WIP-PCM-BLEND", "SF-PCM-BLS", "FG-PCM-20-EG", "WIP-VITC-BULK"}
+    if not needed <= set(items) or "GR-01" not in machines:
+        raise ApiError(409, "no_sample", "The sample products and machines were not found at this site. Load the sample data first.")
+    if tx.val("SELECT count(*) FROM changeover_rules WHERE site_id = %s::uuid", site_id):
+        raise ApiError(409, "not_empty", "This site already has changeover rules. Sample rules are only added to a site without rules.")
+    for i, (code, en, ar, notes) in enumerate(GROUPS):
+        tx.x("INSERT INTO cleaning_groups (tenant_id, code, name_en, name_ar, notes, sort_order) VALUES (%s, %s, %s, %s, %s, %s)"
+             " ON CONFLICT (tenant_id, code) DO UPDATE SET name_en = EXCLUDED.name_en, name_ar = EXCLUDED.name_ar, notes = EXCLUDED.notes",
+             tenant, code, en, ar, notes, (i + 1) * 10)
+    for kind, mcode, frm, to, clean, fmt, ver, wait, notes in CHANGEOVERS:
+        if mcode and mcode not in machines:
+            continue
+        pair = kind == "product_pair"
+        if pair and (frm not in items or to not in items):
+            continue
+        tx.x("INSERT INTO changeover_rules (tenant_id, site_id, resource_id, kind, from_group, to_group, from_item_id, to_item_id,"
+             " cleaning_minutes, format_minutes, verification, verification_wait_minutes, notes)"
+             " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+             tenant, site_id, machines.get(mcode) if mcode else None, kind,
+             None if pair else frm, None if pair else to, items.get(frm) if pair else None, items.get(to) if pair else None,
+             clean, fmt, ver, wait, notes)
+    for code, mcode, mx, days, mn in CAMPAIGNS:
+        if code in items and mcode in machines:
+            tx.x("INSERT INTO campaign_rules (tenant_id, site_id, item_id, resource_id, max_batches, max_days, min_batches)"
+                 " VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT DO NOTHING", tenant, site_id, items[code], machines[mcode], mx, days, mn)
+    for code, (mn, mx, risk) in ITEM_TIMES.items():
+        if code in items:
+            tx.x("UPDATE items SET hold_min_hours = %s, hold_max_hours = %s, release_at_risk_allowed = %s WHERE id = %s",
+                 mn, mx, risk, items[code])
+    for code, mid in machines.items():
+        dirty, clean = HOLDS.get(code, (D(24), D(72)))
+        tx.x("UPDATE resources SET dirty_hold_hours = %s, clean_hold_hours = %s WHERE id = %s AND type = 'machine'", dirty, clean, mid)
+    return {"changeovers": tx.val("SELECT count(*) FROM changeover_rules WHERE site_id = %s::uuid", site_id),
+            "campaigns": tx.val("SELECT count(*) FROM campaign_rules WHERE site_id = %s::uuid", site_id)}
+
+
+@endpoint(auth="tenant_admin")
+def load_sample_rules(call: Call):
+    site_id = call.path["site_id"]
+    if not call.tx.val("SELECT 1 FROM sites WHERE id = %s::uuid", site_id):
+        raise ApiError(404, "not_found", "Site was not found.")
+    out = apply_sample_rules(call, site_id)
+    call.tx.event("SAMPLE_DATA", "changeover_rules", None, "Sample planning rules", out)
+    return {"ok": True, **out}
+
+
 def _uuid(call: Call, sql: str, *args):
     return str(call.tx.val(sql, *args))
 
@@ -319,6 +406,7 @@ def load_sample(call: Call):
          tenant, site_id, machines["BLS-01"], dt.datetime.combine(monday + dt.timedelta(days=2), dt.time(7, 0), dt.timezone.utc),
          dt.datetime.combine(monday + dt.timedelta(days=2), dt.time(13, 0), dt.timezone.utc))
 
+    apply_sample_rules(call, site_id)
     tx.event("SAMPLE_DATA", "items", None, "Pharmaceutical sample dataset",
              {"items": len(items), "boms": len(BOMS), "machines": len(machines)})
     return {"ok": True, "site_id": site_id, "items": len(items), "boms": len(BOMS), "machines": len(machines),

@@ -23,6 +23,9 @@ import { Items } from "./pages/master/Items";
 import { Machines } from "./pages/master/Machines";
 import { RoutingEditor, Routings } from "./pages/master/Routings";
 import { Units } from "./pages/master/Units";
+import { Campaigns } from "./pages/rules/Campaigns";
+import { Changeovers } from "./pages/rules/Changeovers";
+import { ItemTimesPage } from "./pages/rules/ItemTimes";
 
 function NotFound() {
   const { t } = useI18n();
@@ -54,6 +57,9 @@ function Routes() {
     case "/master/machines": return gate(tenantUser, <Machines />);
     case "/master/routings": return gate(tenantUser, <Routings />);
     case "/master/calendar": return gate(tenantUser, <CalendarPage />);
+    case "/rules/changeovers": return gate(tenantUser, <Changeovers />);
+    case "/rules/campaigns": return gate(tenantUser, <Campaigns />);
+    case "/rules/times": return gate(tenantUser, <ItemTimesPage />);
     case "/": return <Home />;
     case "/companies": return gate(platform, <Companies />);
     case "/users": return gate(admin, <Users />);

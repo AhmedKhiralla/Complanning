@@ -8,6 +8,7 @@ import { ExcelMenu, NumberField, ReadOnlyNote, SampleDataButton, str } from "../
 import { del, get, patch, post } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { usePerms } from "../../lib/session";
+import { useFeature } from "../../components/rules";
 import { nameOf, type Downtime, type Resource } from "../../lib/types";
 
 const RES_TYPES = ["machine", "qc_lab", "room", "operator_group"] as const;
@@ -17,7 +18,9 @@ function MachineSheet({ siteId, res, areas, onClose, onSaved }: { siteId: string
   const { t } = useI18n();
   const toast = useToast();
   const [f, setF] = useState({ code: res?.code ?? "", name_en: res?.name_en ?? "", name_ar: res?.name_ar ?? "", type: res?.type ?? "machine",
-    area: res?.area ?? "", location: res?.location ?? "", efficiency_pct: str(res?.efficiency_pct ?? 100), notes: res?.notes ?? "", active: res?.active ?? true });
+    area: res?.area ?? "", location: res?.location ?? "", efficiency_pct: str(res?.efficiency_pct ?? 100), notes: res?.notes ?? "", active: res?.active ?? true,
+    dirty_hold_hours: str(res?.dirty_hold_hours), clean_hold_hours: str(res?.clean_hold_hours) });
+  const holdsOn = useFeature()("equipment_hold_times");
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [general, setGeneral] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -25,7 +28,8 @@ function MachineSheet({ siteId, res, areas, onClose, onSaved }: { siteId: string
   const submit = async () => {
     setBusy(true); setErrs({}); setGeneral(null);
     const body = { name_en: f.name_en, name_ar: f.name_ar || null, type: f.type, area: f.area || null, location: f.location || null,
-      efficiency_pct: Number(f.efficiency_pct || 100), notes: f.notes || null };
+      efficiency_pct: Number(f.efficiency_pct || 100), notes: f.notes || null,
+      dirty_hold_hours: f.dirty_hold_hours === "" ? null : Number(f.dirty_hold_hours), clean_hold_hours: f.clean_hold_hours === "" ? null : Number(f.clean_hold_hours) };
     try {
       if (res) await patch(`/api/resources/${res.id}`, { ...body, active: f.active });
       else await post(`/api/sites/${siteId}/resources`, { ...body, code: f.code });
@@ -54,6 +58,10 @@ function MachineSheet({ siteId, res, areas, onClose, onSaved }: { siteId: string
       </div>
       <NumberField label={t("machines.f.efficiency")} hint={t("machines.f.efficiencyHint")} value={f.efficiency_pct} min={1}
         onChange={set("efficiency_pct")} error={errs.efficiency_pct} suffix="%" />
+      {holdsOn && <div className="grid-2">
+        <NumberField label={t("holds.dirty")} value={f.dirty_hold_hours} min={0} onChange={set("dirty_hold_hours")} error={errs.dirty_hold_hours} />
+        <NumberField label={t("holds.clean")} value={f.clean_hold_hours} min={0} onChange={set("clean_hold_hours")} error={errs.clean_hold_hours} />
+      </div>}
       <TextField label={t("machines.f.notes")} value={f.notes} onChange={set("notes")} />
       {res && <div className="feature" style={{ padding: "4px 0", border: 0 }}>
         <div className="text"><strong>{t("common.active")}</strong></div>

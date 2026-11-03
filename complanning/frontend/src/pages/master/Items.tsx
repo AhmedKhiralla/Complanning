@@ -9,6 +9,7 @@ import { get, patch, post, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { navigate } from "../../lib/router";
 import { usePerms, useSession } from "../../lib/session";
+import type { CleaningGroup } from "../../components/rules";
 import { ITEM_TYPES, PRODUCIBLE, nameOf, type ItemDetail, type ItemRow, type ItemType, type Uom } from "../../lib/types";
 
 type Tab = "general" | "planning" | "units" | "markets" | "usage";
@@ -189,6 +190,7 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
   const toast = useToast();
   const { editCompany } = usePerms();
   const detail = useLoad(() => (itemId ? get<ItemDetail>(`/api/items/${itemId}`) : Promise.resolve(null)), [itemId]);
+  const cgroups = useLoad(() => get<{ items: CleaningGroup[] }>("/api/cleaning-groups"));
   const item = detail.data;
   const [tab, setTab] = useState<Tab>("general");
   const [f, setF] = useState<Record<string, string>>({});
@@ -269,7 +271,10 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
             </div>
             {producible && <div className="grid-2">
               <TextField label={t("items.f.dosageForm")} value={f.dosage_form ?? ""} onChange={set("dosage_form")} disabled={ro} />
-              <TextField label={t("items.f.cleaningGroup")} hint={t("items.f.cleaningGroupHint")} value={f.cleaning_group ?? ""} onChange={set("cleaning_group")} disabled={ro} />
+              <SelectField label={t("items.f.cleaningGroup")} hint={t("items.f.cleaningGroupHint")} value={f.cleaning_group ?? ""} onChange={set("cleaning_group")} disabled={ro}
+                error={errs.cleaning_group} options={[{ value: "", label: "—" }, ...(cgroups.data?.items ?? []).filter((g) => g.active || g.code === f.cleaning_group)
+                  .map((g) => ({ value: g.code, label: `${g.code} · ${nameOf(g, lang)}` })),
+                  ...(f.cleaning_group && cgroups.data && !cgroups.data.items.some((g) => g.code === f.cleaning_group) ? [{ value: f.cleaning_group, label: f.cleaning_group }] : [])]} />
             </div>}
             <Field label={t("items.f.description")}>{(id) => <textarea id={id} className="textarea" value={f.description ?? ""} disabled={ro} maxLength={500} onChange={(e) => set("description")(e.target.value)} />}</Field>
             {!isNew && <div className="feature" style={{ padding: "4px 0", border: 0 }}>

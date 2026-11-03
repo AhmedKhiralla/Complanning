@@ -14,7 +14,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from .config import settings
-from .routers import audit_trail, auth, boms, company, excel, master, platform, production, sample
+from .routers import audit_trail, auth, boms, company, excel, master, platform, production, rules, sample
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -92,6 +92,26 @@ API_ROUTES = [
     Route("/api/sites/{site_id}/holidays/import", production.import_holidays, methods=["POST"]),
     Route("/api/holidays/{holiday_id}", production.update_holiday, methods=["PATCH"]),
     Route("/api/holidays/{holiday_id}", production.delete_holiday, methods=["DELETE"]),
+    # Planning rules
+    Route("/api/cleaning-groups", rules.list_groups, methods=["GET"]),
+    Route("/api/cleaning-groups", rules.create_group, methods=["POST"]),
+    Route("/api/cleaning-groups/{group_id}", rules.update_group, methods=["PATCH"]),
+    Route("/api/cleaning-groups/{group_id}", rules.delete_group, methods=["DELETE"]),
+    Route("/api/sites/{site_id}/changeovers", rules.list_rules, methods=["GET"]),
+    Route("/api/sites/{site_id}/changeovers", rules.create_rule, methods=["POST"]),
+    Route("/api/sites/{site_id}/changeovers/matrix", rules.changeover_matrix, methods=["GET"]),
+    Route("/api/sites/{site_id}/changeovers/resolve", rules.resolve_changeover, methods=["GET"]),
+    Route("/api/changeovers/{rule_id}", rules.update_rule, methods=["PATCH"]),
+    Route("/api/changeovers/{rule_id}", rules.delete_rule, methods=["DELETE"]),
+    Route("/api/sites/{site_id}/campaigns", rules.list_campaigns, methods=["GET"]),
+    Route("/api/sites/{site_id}/campaigns", rules.create_campaign, methods=["POST"]),
+    Route("/api/campaigns/{campaign_id}", rules.update_campaign, methods=["PATCH"]),
+    Route("/api/campaigns/{campaign_id}", rules.delete_campaign, methods=["DELETE"]),
+    Route("/api/sites/{site_id}/equipment-holds", rules.list_equipment_holds, methods=["GET"]),
+    Route("/api/sites/{site_id}/equipment-holds", rules.save_equipment_holds, methods=["PUT"]),
+    Route("/api/item-times", rules.list_item_times, methods=["GET"]),
+    Route("/api/item-times", rules.save_item_times, methods=["PUT"]),
+    Route("/api/sites/{site_id}/sample-rules", sample.load_sample_rules, methods=["POST"]),
     # Excel and sample data
     Route("/api/master/template", excel.template, methods=["GET"]),
     Route("/api/master/import", excel.import_file, methods=["POST"]),

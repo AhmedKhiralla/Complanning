@@ -60,6 +60,7 @@ export interface Resource {
   id: string; site_id: string; code: string; name_en: string; name_ar: string | null;
   type: "machine" | "qc_lab" | "room" | "operator_group"; area: string | null; location: string | null;
   efficiency_pct: number; notes: string | null; active: boolean; routing_count: number;
+  dirty_hold_hours: number | null; clean_hold_hours: number | null;
 }
 
 export interface Downtime {

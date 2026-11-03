@@ -21,7 +21,7 @@ log = logging.getLogger("complanning")
 # ================================================================== resources
 RES_SQL = """
 SELECT r.id, r.site_id, r.code, r.name_en, r.name_ar, r.type, r.area, r.location, r.efficiency_pct, r.notes,
-       r.active, r.updated_at,
+       r.active, r.updated_at, r.dirty_hold_hours, r.clean_hold_hours,
        (SELECT count(DISTINCT s.routing_id) FROM routing_step_resources sr JOIN routing_steps s ON s.id = sr.step_id
          WHERE sr.resource_id = r.id) AS routing_count
   FROM resources r
@@ -37,6 +37,8 @@ class ResourceFields(BaseModel):
     efficiency_pct: Decimal | None = Field(default=None, gt=0, le=100)
     notes: str | None = Field(default=None, max_length=500)
     active: bool | None = None
+    dirty_hold_hours: Decimal | None = Field(default=None, gt=0, le=8760)
+    clean_hold_hours: Decimal | None = Field(default=None, gt=0, le=8760)
 
     @field_validator("name_ar", "area", "location", "notes", mode="before")
     @classmethod
@@ -82,7 +84,8 @@ def update_resource(call: Call):
     if not r:
         raise not_found("Machine")
     require_site(call, r["site_id"], edit=True)
-    patch_row(call, "resources", rid, call.body, ("name_en", "name_ar", "type", "area", "location", "efficiency_pct", "notes", "active"))
+    patch_row(call, "resources", rid, call.body, ("name_en", "name_ar", "type", "area", "location", "efficiency_pct", "notes", "active",
+                                                  "dirty_hold_hours", "clean_hold_hours"))
     return call.tx.one(RES_SQL + " WHERE r.id = %s::uuid", rid)
 
 

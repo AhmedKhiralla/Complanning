@@ -12,6 +12,10 @@ Released so far:
   planned downtime, drag-and-drop routings with alternative machines, working calendars (shifts, Ramadan
   periods, national holidays as proposals to confirm), Excel templates, import and export, and a
   one-click pharmaceutical sample dataset.
+- **Phase 3 – Planning rules**: cleaning groups, changeover rules (same product, within a group, group to
+  group, product pairs, any other change) per site or per machine with cleaning verification and its
+  waiting time, a group matrix and a "check a changeover" tool, campaign limits, dirty and clean
+  equipment hold times, and product holding and QC release times.
 
 The web app is English and Arabic (right-to-left), with light, dark and system themes.
 
@@ -143,7 +147,14 @@ frontend/
 - **Excel import** (items, machines) is all-or-nothing and matched by code; the screen shows a check of
   the file before anything is saved.
 
+- **Changeover rules** are looked up from the most specific to the most general: product pair, then
+  within-group or group-to-group, then "any other product change". A rule for one machine beats the same
+  rule for the whole site. The same product running again uses the same-product rule. Total time =
+  cleaning + format change + waiting for verification results.
+- **Load sample rules** (Rules › Changeovers, company administrators) adds rules for the sample products
+  when the sample data was loaded before Phase 3.
+
 ## Next phase
 
-Phase 3 – Rules: changeover matrix by cleaning group, cleaning verification and its waiting time, clean
-and dirty equipment hold times, campaign limits, product holding times and QC lead times.
+Phase 4 – Demand and stock: sales plan per market and month (or a 30-day horizon), stock on hand by
+status, and Excel import for both.

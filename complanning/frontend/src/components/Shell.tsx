@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   LuBoxes, LuBuilding2, LuCalendarDays, LuChartGantt, LuChevronDown, LuClipboardList, LuFactory, LuHouse,
   LuKeyRound, LuLanguages, LuListTree, LuLogOut, LuMenu, LuMonitor, LuMoon, LuScrollText, LuSettings, LuSun,
-  LuMapPin, LuRuler, LuUsers, LuWorkflow, LuX,
+  LuMapPin, LuRuler, LuUsers, LuWorkflow, LuX, LuArrowRightLeft, LuRepeat, LuTimer,
 } from "react-icons/lu";
 import { useI18n } from "../lib/i18n";
 import { Link, navigate, usePath } from "../lib/router";
@@ -38,6 +38,11 @@ function groupsFor(isPlatform: boolean, isAdmin: boolean): NavGroup[] {
       { to: "/master/machines", label: "nav.machines", icon: <LuFactory /> },
       { to: "/master/routings", label: "nav.routings", icon: <LuWorkflow /> },
       { to: "/master/calendar", label: "nav.calendars", icon: <LuCalendarDays /> },
+    ] },
+    { title: "nav.rules", items: [
+      { to: "/rules/changeovers", label: "nav.changeovers", icon: <LuArrowRightLeft /> },
+      { to: "/rules/campaigns", label: "nav.campaigns", icon: <LuRepeat /> },
+      { to: "/rules/times", label: "nav.itemTimes", icon: <LuTimer /> },
     ] },
   ];
   if (isAdmin) {
@@ -90,7 +95,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
-        <div className="sidebar-foot">{t("shell.version", { v: "0.2" })} · Comp11 Labs</div>
+        <div className="sidebar-foot">{t("shell.version", { v: "0.3" })} · Comp11 Labs</div>
       </aside>
       {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
 
