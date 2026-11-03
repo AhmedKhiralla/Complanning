@@ -28,7 +28,7 @@ function groupsFor(isPlatform: boolean, isAdmin: boolean): NavGroup[] {
   const groups: NavGroup[] = [
     { items: [{ to: "/", label: "nav.home", icon: <LuHouse /> }] },
     { title: "nav.planning", items: [
-      { label: "nav.plans", icon: <LuChartGantt />, phase: 5 },
+      { to: "/plans", label: "nav.plans", icon: <LuChartGantt /> },
       { to: "/planning/sales", label: "nav.salesPlan", icon: <LuClipboardList /> },
       { to: "/planning/stock", label: "nav.stock", icon: <LuPackage /> },
       { to: "/planning/requirements", label: "nav.requirements", icon: <LuCalculator /> },
@@ -97,7 +97,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
-        <div className="sidebar-foot">{t("shell.version", { v: "0.4" })} · Comp11 Labs</div>
+        <div className="sidebar-foot">{t("shell.version", { v: "0.5" })} · Comp11 Labs</div>
       </aside>
       {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
 

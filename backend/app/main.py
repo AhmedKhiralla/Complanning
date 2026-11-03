@@ -14,7 +14,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from .config import settings
-from .routers import audit_trail, auth, boms, company, demand, excel, master, platform, production, rules, sample
+from .routers import audit_trail, auth, boms, company, demand, excel, master, plans, platform, production, rules, sample
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -122,6 +122,13 @@ API_ROUTES = [
     Route("/api/stock/{stock_id}", demand.delete_stock, methods=["DELETE"]),
     Route("/api/sites/{site_id}/requirements", demand.requirements, methods=["GET"]),
     Route("/api/sites/{site_id}/sample-demand", sample.load_sample_demand, methods=["POST"]),
+    # Production plans
+    Route("/api/sites/{site_id}/plans", plans.list_plans, methods=["GET"]),
+    Route("/api/sites/{site_id}/plans", plans.create_plan, methods=["POST"]),
+    Route("/api/plans/{plan_id}", plans.get_plan, methods=["GET"]),
+    Route("/api/plans/{plan_id}", plans.update_plan, methods=["PATCH"]),
+    Route("/api/plans/{plan_id}", plans.delete_plan, methods=["DELETE"]),
+    Route("/api/plans/{plan_id}/export", plans.export_plan, methods=["GET"]),
     # Excel and sample data
     Route("/api/master/template", excel.template, methods=["GET"]),
     Route("/api/master/import", excel.import_file, methods=["POST"]),

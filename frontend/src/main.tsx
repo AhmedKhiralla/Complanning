@@ -29,6 +29,8 @@ import { ItemTimesPage } from "./pages/rules/ItemTimes";
 import { Requirements } from "./pages/planning/Requirements";
 import { SalesPlan } from "./pages/planning/SalesPlan";
 import { StockPage } from "./pages/planning/Stock";
+import { Plans } from "./pages/plans/Plans";
+import { PlanView } from "./pages/plans/PlanView";
 
 function NotFound() {
   const { t } = useI18n();
@@ -51,6 +53,7 @@ function Routes() {
   const gate = (ok: boolean, el: ReactElement) => (ok ? el : <Forbidden />);
   const tenantUser = !!me.tenant;
   let m: Record<string, string> | null;
+  if ((m = match("/plans/:id", path))) return gate(tenantUser, <PlanView key={m.id} planId={m.id} />);
   if ((m = match("/master/boms/:id", path))) return gate(tenantUser, <BomEditor key={m.id} itemId={m.id} />);
   if ((m = match("/master/routings/:id", path))) return gate(tenantUser, <RoutingEditor key={m.id} itemId={m.id} />);
   switch (path) {
@@ -60,6 +63,7 @@ function Routes() {
     case "/master/machines": return gate(tenantUser, <Machines />);
     case "/master/routings": return gate(tenantUser, <Routings />);
     case "/master/calendar": return gate(tenantUser, <CalendarPage />);
+    case "/plans": return gate(tenantUser, <Plans />);
     case "/planning/sales": return gate(tenantUser, <SalesPlan />);
     case "/planning/stock": return gate(tenantUser, <StockPage />);
     case "/planning/requirements": return gate(tenantUser, <Requirements />);

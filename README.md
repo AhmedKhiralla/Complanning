@@ -20,6 +20,9 @@ Released so far:
   warnings, values at today's price), stock by lot and QC status (released, quarantine, rejected) with
   expiry, assay and LOD, Excel template, import and export for both, and net requirements: batches to
   make at every level and material shortages for any horizon.
+- **Phase 5 – Planning engine**: production plans made by a finite-capacity scheduler for one of three
+  objectives (on-time delivery, sales value, utilisation), with a Gantt chart per machine, deliveries
+  against the sales plan, batch pegging across stages, warnings, machine utilisation and Excel export.
 
 The web app is English and Arabic (right-to-left), with light, dark and system themes.
 
@@ -168,8 +171,30 @@ frontend/
   from Excel replaces all stock lines of the site and sets the stock date to today.
 - **Every Excel export** has an "Export info" sheet with the user's name, email and the export time (UTC).
 
+- **How the engine plans.**
+  1. It takes the sales plan lines due in the horizon, capped at each market's monthly sales limit.
+  2. It nets them against stock by due date and builds batches level by level, the same way as the
+     net requirements page. Each batch knows which delivery or batch it feeds. A batch's leftover only
+     serves needs inside the product's maximum hold time; otherwise a new batch is made.
+  3. It places operations on machines in time, respecting:
+     - routings and alternative machines (with their own speed and efficiency);
+     - shifts, Ramadan periods, confirmed holidays and planned downtime (a step pauses outside working
+       time);
+     - changeovers from the rules, with cleaning and format change as working time and the wait for
+       verification results as elapsed time;
+     - campaign limits (a full clean after the maximum batches or days);
+     - clean equipment hold times (re-clean when a machine stays idle too long);
+     - QC release and minimum holding time before the next stage, or release at risk where allowed;
+     - maximum holding times, treated as a deadline;
+     - material availability (lead time plus QC for missing materials).
+  4. A batch that starts a chain does not start more than the chosen number of days before it is
+     needed.
+  5. Among operations competing for a machine it picks by the objective. It builds several schedules
+     with different tie-breaking and keeps the best one.
+- **Plans are kept.** Every run is stored with its options and results; rename, archive, delete and
+  export are recorded in the audit trail.
+
 ## Next phase
 
-Phase 5 – Planning engine: schedule the batches on machines in time, using routings, calendars, downtime,
-changeovers, campaign limits, holding and QC times, with on-time delivery, sales value or utilisation as
-the objective.
+Phase 6 – Plan editing: move, lock and re-sequence batches on the Gantt chart, re-plan around locked
+batches, compare plans side by side, and release a plan.
