@@ -16,6 +16,8 @@ interface I18n {
   dateTime: (iso: string | null | undefined, tz?: string) => string;
   date: (iso: string | null | undefined, tz?: string) => string;
   number: (n: number) => string;
+  /** "2026-11" -> "Nov 2026". */
+  month: (ym: string, long?: boolean) => string;
   /** Quantity with up to `max` decimals. */
   qty: (n: number | string | null | undefined, max?: number) => string;
   countryName: (code: string) => string;
@@ -83,6 +85,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       dateTime: (iso, tz) => (iso ? fmt(tz, true).format(new Date(iso)) : ""),
       date: (iso, tz) => (iso ? fmt(tz, false).format(new Date(iso)) : ""),
       number: (n) => nf.format(n),
+      month: (ym, long) => new Intl.DateTimeFormat(locale, { timeZone: "UTC", year: "numeric", month: long ? "long" : "short" })
+        .format(new Date(`${ym.slice(0, 7)}-01T00:00:00Z`)),
       qty: (n, max = 3) => {
         if (n === null || n === undefined || n === "") return "";
         const v = typeof n === "string" ? Number(n) : n;

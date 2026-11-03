@@ -26,6 +26,9 @@ import { Units } from "./pages/master/Units";
 import { Campaigns } from "./pages/rules/Campaigns";
 import { Changeovers } from "./pages/rules/Changeovers";
 import { ItemTimesPage } from "./pages/rules/ItemTimes";
+import { Requirements } from "./pages/planning/Requirements";
+import { SalesPlan } from "./pages/planning/SalesPlan";
+import { StockPage } from "./pages/planning/Stock";
 
 function NotFound() {
   const { t } = useI18n();
@@ -57,6 +60,9 @@ function Routes() {
     case "/master/machines": return gate(tenantUser, <Machines />);
     case "/master/routings": return gate(tenantUser, <Routings />);
     case "/master/calendar": return gate(tenantUser, <CalendarPage />);
+    case "/planning/sales": return gate(tenantUser, <SalesPlan />);
+    case "/planning/stock": return gate(tenantUser, <StockPage />);
+    case "/planning/requirements": return gate(tenantUser, <Requirements />);
     case "/rules/changeovers": return gate(tenantUser, <Changeovers />);
     case "/rules/campaigns": return gate(tenantUser, <Campaigns />);
     case "/rules/times": return gate(tenantUser, <ItemTimesPage />);

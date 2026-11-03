@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   LuBoxes, LuBuilding2, LuCalendarDays, LuChartGantt, LuChevronDown, LuClipboardList, LuFactory, LuHouse,
   LuKeyRound, LuLanguages, LuListTree, LuLogOut, LuMenu, LuMonitor, LuMoon, LuScrollText, LuSettings, LuSun,
-  LuMapPin, LuRuler, LuUsers, LuWorkflow, LuX, LuArrowRightLeft, LuRepeat, LuTimer,
+  LuMapPin, LuRuler, LuUsers, LuWorkflow, LuX, LuArrowRightLeft, LuRepeat, LuTimer, LuPackage, LuCalculator,
 } from "react-icons/lu";
 import { useI18n } from "../lib/i18n";
 import { Link, navigate, usePath } from "../lib/router";
@@ -29,7 +29,9 @@ function groupsFor(isPlatform: boolean, isAdmin: boolean): NavGroup[] {
     { items: [{ to: "/", label: "nav.home", icon: <LuHouse /> }] },
     { title: "nav.planning", items: [
       { label: "nav.plans", icon: <LuChartGantt />, phase: 5 },
-      { label: "nav.salesPlan", icon: <LuClipboardList />, phase: 4 },
+      { to: "/planning/sales", label: "nav.salesPlan", icon: <LuClipboardList /> },
+      { to: "/planning/stock", label: "nav.stock", icon: <LuPackage /> },
+      { to: "/planning/requirements", label: "nav.requirements", icon: <LuCalculator /> },
     ] },
     { title: "nav.masterData", items: [
       { to: "/master/items", label: "nav.items", icon: <LuBoxes /> },
@@ -95,7 +97,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
-        <div className="sidebar-foot">{t("shell.version", { v: "0.3" })} · Comp11 Labs</div>
+        <div className="sidebar-foot">{t("shell.version", { v: "0.4" })} · Comp11 Labs</div>
       </aside>
       {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
 

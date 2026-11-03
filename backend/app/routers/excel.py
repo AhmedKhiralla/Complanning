@@ -67,6 +67,15 @@ def _autosize(ws):
 
 
 def _xlsx(wb, filename: str, call: Call, what: str) -> Response:
+    """Add who exported the data and when (21 CFR Part 11), then send the workbook."""
+    info = wb.create_sheet("Export info")
+    stamp = call.tx.one("SELECT to_char(now() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS') || ' UTC' AS utc,"
+                        " (SELECT name FROM tenants WHERE id = %s) AS company", call.tenant_id)
+    for row in (("Exported by", f"{call.user['full_name']} <{call.user['email']}>"), ("Exported at", stamp["utc"]),
+                ("Company", stamp["company"]), ("Content", what), ("Source", "Complanning by Comp11 Labs")):
+        info.append(row)
+    info.column_dimensions["A"].width = 16
+    info.column_dimensions["B"].width = 60
     buf = io.BytesIO()
     wb.save(buf)
     call.tx.event("EXPORT", what, None, filename, {"format": "xlsx"})
@@ -76,6 +85,9 @@ def _xlsx(wb, filename: str, call: Call, what: str) -> Response:
 @endpoint(auth="tenant_user")
 def template(call: Call):
     entity = call.query.get("entity", "items")
+    if entity in ("demand", "stock"):
+        from .demand import _template
+        return _template(entity)
     cols = ENTITIES.get(entity)
     if not cols:
         raise ApiError(422, "invalid", "Unknown template.")
@@ -186,6 +198,12 @@ def _read_upload(call: Call) -> bytes:
 @endpoint(auth="tenant_user")
 def import_file(call: Call):
     entity = call.query.get("entity", "items")
+    if entity in ("demand", "stock"):
+        from .demand import import_demand, import_stock
+        if not call.query.get("site_id"):
+            raise ApiError(422, "invalid", "Choose the site to import into.")
+        fn = import_demand if entity == "demand" else import_stock
+        return fn(call, call.query["site_id"], call.query.get("commit") == "1")
     cols = ENTITIES.get(entity)
     if not cols:
         raise ApiError(422, "invalid", "Unknown import type.")
@@ -291,6 +309,11 @@ def import_file(call: Call):
 def export_master(call: Call):
     """All company master data in one workbook; site sheets for the chosen site."""
     site_id = call.query.get("site_id")
+    if call.query.get("entity") in ("demand", "stock"):
+        if not site_id:
+            raise ApiError(422, "invalid", "Choose the site to export.")
+        from .demand import export
+        return export(call, call.query["entity"], site_id)
     site = require_site(call, site_id) if site_id else None
     wb = _wb()
     ws = wb.active

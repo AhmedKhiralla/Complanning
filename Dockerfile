@@ -4,6 +4,7 @@
 FROM node:22-slim AS web
 WORKDIR /web
 COPY frontend/ ./
+# Remove any node_modules that came with the source, then install fresh.
 RUN rm -rf node_modules && npm install --no-audit --no-fund && npm run build
 
 # ---- run the API

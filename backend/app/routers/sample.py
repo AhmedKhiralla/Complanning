@@ -294,6 +294,115 @@ def apply_sample_rules(call: Call, site_id: str) -> dict:
             "campaigns": tx.val("SELECT count(*) FROM campaign_rules WHERE site_id = %s::uuid", site_id)}
 
 
+# ---------------------------------------------------------------- Phase 4: sales plan and stock
+# item, market, quantity per month for six months from the current month; (month index, day) for dated tender deliveries
+DEMAND = [
+    ("FG-PCM-20-EG", "LOCAL", [48000, 52000, 55000, 50000, 46000, 50000], None),
+    ("FG-PCM-20-EG", "MOH", [24000, 40000, 0, 40000, 0, 36000], {0: 20, 1: 15, 3: 15, 5: 10}),
+    ("FG-PCM-20-SA", "KSA", [16000, 18000, 22000, 18000, 16000, 20000], None),
+    ("FG-VITC-120-EG", "LOCAL", [22000, 26000, 28000, 24000, 20000, 22000], None),
+]
+
+# item, lot prefix, [(status, quantity, months since manufacture, assay %, LOD %)]; shelf life in months
+STOCK = [
+    ("FG-PCM-20-EG", "PE", [("released", D(18500), 2, None, None), ("quarantine", D(23800), 0, None, None)], 36),
+    ("FG-PCM-20-SA", "PS", [("released", D(6200), 3, None, None)], 36),
+    ("FG-VITC-120-EG", "VC", [("released", D(7400), 1, None, None), ("quarantine", D(7950), 0, None, None)], 24),
+    ("SF-PCM-BLS", "BL", [("released", D(31000), 0, None, None)], 36),
+    ("RM-PCM", "API", [("released", D(600), 5, D("99.6"), D("0.3")), ("quarantine", D(500), 0, D("99.4"), D("0.4"))], 48),
+    ("RM-MAIZE", "MZ", [("released", D(400), 4, None, D("11.5"))], 36),
+    ("RM-PVP", "PV", [("released", D(120), 6, None, None)], 36),
+    ("RM-MCC", "MC", [("released", D(150), 5, None, None)], 60),
+    ("RM-SSG", "SG", [("released", D(60), 5, None, None)], 36),
+    ("RM-MGST", "MG", [("released", D(25), 7, None, None)], 36),
+    ("RM-TALC", "TL", [("released", D(40), 8, None, None)], 60),
+    ("RM-ASC", "ASC", [("released", D(30), 3, D("99.2"), None)], 36),
+    ("RM-SUC", "SU", [("released", D(2500), 2, None, None)], 36),
+    ("RM-SORB", "SO", [("released", D(1200), 2, None, None)], 24),
+    ("RM-GLY", "GL", [("released", D(400), 4, None, None)], 36),
+    ("RM-NABZ", "NB", [("released", D(25), 6, None, None)], 36),
+    ("RM-CIT", "CA", [("released", D(50), 6, None, None)], 36),
+    ("RM-FLV-ORG", "FL", [("released", D(20), 2, None, None)], 18),
+    ("PM-PVC-250", "PVC", [("released", D(400), 2, None, None)], 0),
+    ("PM-ALU-250", "ALU", [("released", D(250), 2, None, None), ("rejected", D(40), 3, None, None)], 0),
+    ("PM-CTN-PCM-EG", "CE", [("released", D(85000), 1, None, None)], 0),
+    ("PM-CTN-PCM-SA", "CS", [("released", D(8000), 2, None, None)], 0),
+    ("PM-LEAF-PCM-EG", "LE", [("released", D(90000), 1, None, None)], 0),
+    ("PM-LEAF-PCM-SA", "LS", [("released", D(30000), 2, None, None)], 0),
+    ("PM-SHP-100", "SH", [("released", D(1500), 1, None, None)], 0),
+    ("PM-BTL-120", "BT", [("released", D(40000), 1, None, None)], 0),
+    ("PM-CAP-28", "CP", [("released", D(40000), 1, None, None)], 0),
+    ("PM-LBL-VITC", "LV", [("released", D(15000), 1, None, None)], 0),
+    ("PM-CTN-VITC", "CV", [("released", D(30000), 1, None, None)], 0),
+    ("PM-LEAF-VITC", "LF", [("released", D(30000), 1, None, None)], 0),
+    ("PM-CUP-10", "CU", [("released", D(30000), 2, None, None)], 0),
+    ("PM-SHP-60", "S6", [("released", D(600), 1, None, None)], 0),
+]
+
+
+def _months_back(d: dt.date, n: int) -> dt.date:
+    y, m = divmod(d.month - 1 - n, 12)
+    return dt.date(d.year + y, m + 1, min(d.day, 28))
+
+
+def apply_sample_demand(call: Call, site_id: str) -> dict:
+    """Six months of sales plan from the current month and a stock snapshot for the sample products."""
+    tx, tenant = call.tx, call.tenant_id
+    items = {r["code"]: str(r["id"]) for r in tx.q("SELECT id, code FROM items")}
+    markets = {r["code"]: str(r["id"]) for r in tx.q("SELECT id, code FROM markets")}
+    if not {"FG-PCM-20-EG", "FG-VITC-120-EG", "RM-PCM"} <= set(items) or "LOCAL" not in markets:
+        raise ApiError(409, "no_sample", "The sample products were not found. Load the sample data first.")
+    if tx.val("SELECT count(*) FROM demand_lines WHERE site_id = %s::uuid", site_id) or \
+            tx.val("SELECT count(*) FROM stock_lots WHERE site_id = %s::uuid", site_id):
+        raise ApiError(409, "not_empty", "This site already has a sales plan or stock. Sample demand is only added to an empty site.")
+    today = tx.val("SELECT current_date")
+    first = today.replace(day=1)
+    lines = 0
+    for code, mcode, qtys, dated in DEMAND:
+        if code not in items or mcode not in markets:
+            continue
+        for i, q in enumerate(qtys):
+            if not q:
+                continue
+            y, m = divmod(first.month - 1 + i, 12)
+            month = dt.date(first.year + y, m + 1, 1)
+            due = month.replace(day=dated[i]) if dated and i in dated else None
+            if due and due < today:
+                due = None
+            tx.x("INSERT INTO demand_lines (tenant_id, site_id, item_id, market_id, month, quantity, due_date, notes)"
+                 " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)", tenant, site_id, items[code], markets[mcode], month, D(q), due,
+                 "Tender delivery" if due else None)
+            lines += 1
+    lots = 0
+    for code, prefix, entries, shelf in STOCK:
+        if code not in items:
+            continue
+        for n, (status, qty, age, assay, lod) in enumerate(entries, start=1):
+            made = _months_back(today, age)
+            expires = None
+            if shelf:
+                y, m = divmod(made.month - 1 + shelf, 12)
+                expires = dt.date(made.year + y, m + 1, min(made.day, 28))
+            tx.x("INSERT INTO stock_lots (tenant_id, site_id, item_id, lot_no, status, quantity, manufactured_on, expires_on, assay_pct, lod_pct)"
+                 " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)", tenant, site_id, items[code],
+                 f"{prefix}{made:%y%m}-{n:03d}", status, qty, made, expires, assay, lod)
+            lots += 1
+    if "RM-PW" in items:
+        tx.x("UPDATE items SET not_stock_controlled = true WHERE id = %s", items["RM-PW"])
+    tx.x("UPDATE sites SET stock_as_of = %s WHERE id = %s::uuid", today, site_id)
+    return {"demand_lines": lines, "stock_lots": lots}
+
+
+@endpoint(auth="tenant_admin")
+def load_sample_demand(call: Call):
+    site_id = call.path["site_id"]
+    if not call.tx.val("SELECT 1 FROM sites WHERE id = %s::uuid", site_id):
+        raise ApiError(404, "not_found", "Site was not found.")
+    out = apply_sample_demand(call, site_id)
+    call.tx.event("SAMPLE_DATA", "demand_lines", None, "Sample sales plan and stock", out)
+    return {"ok": True, **out}
+
+
 @endpoint(auth="tenant_admin")
 def load_sample_rules(call: Call):
     site_id = call.path["site_id"]
@@ -407,6 +516,7 @@ def load_sample(call: Call):
          dt.datetime.combine(monday + dt.timedelta(days=2), dt.time(13, 0), dt.timezone.utc))
 
     apply_sample_rules(call, site_id)
+    apply_sample_demand(call, site_id)
     tx.event("SAMPLE_DATA", "items", None, "Pharmaceutical sample dataset",
              {"items": len(items), "boms": len(BOMS), "machines": len(machines)})
     return {"ok": True, "site_id": site_id, "items": len(items), "boms": len(BOMS), "machines": len(machines),

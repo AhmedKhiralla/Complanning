@@ -194,7 +194,7 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
   const item = detail.data;
   const [tab, setTab] = useState<Tab>("general");
   const [f, setF] = useState<Record<string, string>>({});
-  const [flags, setFlags] = useState({ test_before_sale: false, active: true });
+  const [flags, setFlags] = useState({ test_before_sale: false, active: true, not_stock_controlled: false });
   const [code, setCode] = useState("");
   const [type, setType] = useState<ItemType>(defaultType ?? "raw_material");
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
@@ -206,7 +206,7 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
   if (item && loadedFor !== item.id + item.updated_at) {
     const next: Record<string, string> = {};
     FIELDS.forEach((k) => { next[k] = str((item as unknown as Record<string, unknown>)[k] as string | number | null); });
-    setF(next); setFlags({ test_before_sale: item.test_before_sale, active: item.active });
+    setF(next); setFlags({ test_before_sale: item.test_before_sale, active: item.active, not_stock_controlled: !!item.not_stock_controlled });
     setCode(item.code); setType(item.type); setLoadedFor(item.id + item.updated_at);
   }
   if (isNew && loadedFor !== "new") {
@@ -286,6 +286,10 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
             {!producible && <div className="grid-2">
               <NumberField label={t("items.f.leadTime")} value={f.lead_time_days ?? ""} onChange={set("lead_time_days")} disabled={ro} min={0} step="1" error={errs.lead_time_days} />
               <NumberField label={t("items.f.qcRelease")} value={f.qc_release_days ?? ""} onChange={set("qc_release_days")} disabled={ro} min={0} />
+            </div>}
+            {!producible && <div className="feature" style={{ padding: "4px 0", border: 0 }}>
+              <div className="text"><strong>{t("items.f.notStock")}</strong><span>{t("items.f.notStockHint")}</span></div>
+              <Switch label={t("items.f.notStock")} checked={flags.not_stock_controlled} disabled={ro} onChange={(v) => setFlags({ ...flags, not_stock_controlled: v })} />
             </div>}
             <div className="grid-2">
               {!producible && <NumberField label={t("items.f.moq")} value={f.moq ?? ""} onChange={set("moq")} disabled={ro} min={0} suffix={stockCode} />}

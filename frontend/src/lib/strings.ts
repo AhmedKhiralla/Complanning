@@ -1,6 +1,7 @@
 // Interface text in English and Arabic. Keys are shared; {name} placeholders are filled by t().
 import { masterAr, masterEn } from "./strings_master";
 import { rulesAr, rulesEn } from "./strings_rules";
+import { demandAr, demandEn } from "./strings_demand";
 
 const enBase = {
   "app.name": "Complanning",
@@ -380,7 +381,7 @@ const enBase = {
   "forbidden.body": "Ask your company administrator for the role you need.",
 };
 
-export const en = { ...enBase, ...masterEn, ...rulesEn };
+export const en = { ...enBase, ...masterEn, ...rulesEn, ...demandEn };
 export type StringKey = keyof typeof en;
 
 const arBase: Record<keyof typeof enBase, string> = {
@@ -748,4 +749,4 @@ const arBase: Record<keyof typeof enBase, string> = {
   "forbidden.body": "اطلب من مسؤول شركتك الدور المناسب.",
 };
 
-export const ar: Record<StringKey, string> = { ...arBase, ...masterAr, ...rulesAr };
+export const ar: Record<StringKey, string> = { ...arBase, ...masterAr, ...rulesAr, ...demandAr };

@@ -122,6 +122,8 @@ export function usePerms() {
   const editCompany = admin || !!me?.sites.some((s) => s.roles.includes("master_data_editor"));
   const editSite = (id: string | null | undefined) =>
     admin || !!(id && me?.sites.find((s) => s.id === id)?.roles.includes("master_data_editor"));
+  const planSite = (id: string | null | undefined) =>
+    admin || !!(id && me?.sites.find((s) => s.id === id)?.roles.includes("planner"));
   const site = me?.sites.find((s) => s.id === siteId) ?? null;
-  return { admin, editCompany, editSite, site, siteId };
+  return { admin, editCompany, editSite, planSite, site, siteId };
 }

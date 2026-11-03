@@ -46,3 +46,16 @@ def require_site(call: Call, site_id: str, edit: bool = False) -> dict:
     if not roles:
         raise ApiError(403, "forbidden", "You do not have access to this site.")
     return site
+
+
+def can_plan(call: Call, site_id: str) -> bool:
+    return bool(call.user["is_tenant_admin"]) or "planner" in site_roles(call, site_id)
+
+
+def require_plan(call: Call, site_id: str, edit: bool = False) -> dict:
+    """Planning data (sales plan, stock, plans): planners of the site and administrators change it,
+    anyone with a role at the site reads it."""
+    site = require_site(call, site_id)
+    if edit and not can_plan(call, site_id):
+        raise ApiError(403, "forbidden", "Planner access at this site is required to change this.")
+    return site

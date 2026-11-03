@@ -16,6 +16,10 @@ Released so far:
   group, product pairs, any other change) per site or per machine with cleaning verification and its
   waiting time, a group matrix and a "check a changeover" tool, campaign limits, dirty and clean
   equipment hold times, and product holding and QC release times.
+- **Phase 4 – Demand and stock**: a monthly sales plan per product and market (due dates, sales-limit
+  warnings, values at today's price), stock by lot and QC status (released, quarantine, rejected) with
+  expiry, assay and LOD, Excel template, import and export for both, and net requirements: batches to
+  make at every level and material shortages for any horizon.
 
 The web app is English and Arabic (right-to-left), with light, dark and system themes.
 
@@ -154,7 +158,18 @@ frontend/
 - **Load sample rules** (Rules › Changeovers, company administrators) adds rules for the sample products
   when the sample data was loaded before Phase 3.
 
+- **Net requirements** net each item once against its stock, level by level through the active bills of
+  materials: finished goods, then semi-finished, then work in process, then materials. Fixed batches are
+  always full; a partial last batch is allowed down to the BOM's minimum batch percentage. Which stock
+  counts is set by the company features (finished, semi-finished, work in process); quarantine stock
+  counts only when the planner switches it on. Materials marked "not stock-controlled" (such as purified
+  water) never show as shortages.
+- **Sales plan and stock** are changed by planners of the site and company administrators. Importing stock
+  from Excel replaces all stock lines of the site and sets the stock date to today.
+- **Every Excel export** has an "Export info" sheet with the user's name, email and the export time (UTC).
+
 ## Next phase
 
-Phase 4 – Demand and stock: sales plan per market and month (or a 30-day horizon), stock on hand by
-status, and Excel import for both.
+Phase 5 – Planning engine: schedule the batches on machines in time, using routings, calendars, downtime,
+changeovers, campaign limits, holding and QC times, with on-time delivery, sales value or utilisation as
+the objective.

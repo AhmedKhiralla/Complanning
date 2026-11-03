@@ -43,7 +43,7 @@ export function useMarkets() {
 }
 
 interface ImportSummary {
-  rows: number; create: number; update: number; error_count: number; committed: boolean;
+  rows: number; create: number; update: number; remove?: number; error_count: number; committed: boolean;
   errors: { row: number; code: string | null; problems: string[] }[];
 }
 
@@ -57,7 +57,9 @@ async function upload(entity: string, siteId: string | undefined, file: File, co
   return data;
 }
 
-function ImportDialog({ entity, siteId, onClose, onDone }: { entity: "items" | "machines"; siteId?: string; onClose: () => void; onDone: () => void }) {
+export type ExcelEntity = "items" | "machines" | "demand" | "stock";
+
+function ImportDialog({ entity, siteId, onClose, onDone }: { entity: ExcelEntity; siteId?: string; onClose: () => void; onDone: () => void }) {
   const { t } = useI18n();
   const toast = useToast();
   const [file, setFile] = useState<File | null>(null);
@@ -84,7 +86,7 @@ function ImportDialog({ entity, siteId, onClose, onDone }: { entity: "items" | "
         ? <Button variant="primary" busy={busy} onClick={() => run(true)}>{t("io.commit", { n: summary.rows })}</Button>
         : <Button variant="primary" busy={busy} disabled={!file} onClick={() => run(false)}>{t("io.check")}</Button>}
     </>}>
-      <p>{t("io.lead")}</p>
+      <p>{entity === "demand" ? t("io.leadDemand") : entity === "stock" ? t("io.leadStock") : t("io.lead")}</p>
       <input ref={input} type="file" accept=".xlsx" className="visually-hidden"
         onChange={(e) => { setFile(e.target.files?.[0] ?? null); setSummary(null); setErr(null); }} />
       <Button icon={<LuFileSpreadsheet />} onClick={() => input.current?.click()}>{file ? file.name : t("io.choose")}</Button>
@@ -94,7 +96,8 @@ function ImportDialog({ entity, siteId, onClose, onDone }: { entity: "items" | "
           <div className="row wrap small">
             <Badge>{t("io.rows", { n: summary.rows })}</Badge>
             <Badge tone="ok">{t("io.willCreate", { n: summary.create })}</Badge>
-            <Badge tone="brand">{t("io.willUpdate", { n: summary.update })}</Badge>
+            {entity !== "stock" && <Badge tone="brand">{t("io.willUpdate", { n: summary.update })}</Badge>}
+            {!!summary.remove && <Badge tone="warn">{t("io.willRemove", { n: summary.remove })}</Badge>}
             {summary.error_count > 0 && <Badge tone="danger">{t("io.errors", { n: summary.error_count })}</Badge>}
           </div>
           {summary.error_count === 0 ? <Notice tone="ok">{t("io.ok")}</Notice> : (
@@ -114,7 +117,7 @@ function ImportDialog({ entity, siteId, onClose, onDone }: { entity: "items" | "
 }
 
 /** Template, import and export menu. */
-export function ExcelMenu({ entity, siteId, canEdit, onImported }: { entity: "items" | "machines"; siteId?: string; canEdit: boolean; onImported: () => void }) {
+export function ExcelMenu({ entity, siteId, canEdit, onImported }: { entity: ExcelEntity; siteId?: string; canEdit: boolean; onImported: () => void }) {
   const { t } = useI18n();
   const [importing, setImporting] = useState(false);
   return (
@@ -122,10 +125,11 @@ export function ExcelMenu({ entity, siteId, canEdit, onImported }: { entity: "it
       <Menu trigger={(p) => <Button icon={<LuFileSpreadsheet />} {...p}>Excel<LuChevronDown /></Button>}>
         {(close) => <>
           {canEdit && <button type="button" role="menuitem" className="menu-item" onClick={() => { close(); setImporting(true); }}>
-            <LuUpload />{entity === "items" ? t("io.importItems") : t("io.importMachines")}</button>}
+            <LuUpload />{t(({ items: "io.importItems", machines: "io.importMachines", demand: "io.importDemand", stock: "io.importStock" } as const)[entity])}</button>}
           <a className="menu-item" role="menuitem" href={`/api/master/template?entity=${entity}`} onClick={close}><LuDownload />{t("io.template")}</a>
           <div className="menu-sep" />
-          <a className="menu-item" role="menuitem" href={"/api/master/export" + qs({ site_id: siteId })} onClick={close}><LuFileSpreadsheet />{t("io.exportAll")}</a>
+          <a className="menu-item" role="menuitem" href={"/api/master/export" + qs({ site_id: siteId, entity: entity === "demand" || entity === "stock" ? entity : undefined })} onClick={close}>
+            <LuFileSpreadsheet />{entity === "demand" ? t("io.exportDemand") : entity === "stock" ? t("io.exportStock") : t("io.exportAll")}</a>
         </>}
       </Menu>
       {importing && <ImportDialog entity={entity} siteId={siteId} onClose={() => setImporting(false)} onDone={onImported} />}

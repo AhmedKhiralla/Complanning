@@ -14,7 +14,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from .config import settings
-from .routers import audit_trail, auth, boms, company, excel, master, platform, production, rules, sample
+from .routers import audit_trail, auth, boms, company, demand, excel, master, platform, production, rules, sample
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -112,6 +112,16 @@ API_ROUTES = [
     Route("/api/item-times", rules.list_item_times, methods=["GET"]),
     Route("/api/item-times", rules.save_item_times, methods=["PUT"]),
     Route("/api/sites/{site_id}/sample-rules", sample.load_sample_rules, methods=["POST"]),
+    # Demand and stock
+    Route("/api/sites/{site_id}/demand", demand.get_demand, methods=["GET"]),
+    Route("/api/sites/{site_id}/demand", demand.save_demand, methods=["PUT"]),
+    Route("/api/sites/{site_id}/stock", demand.list_stock, methods=["GET"]),
+    Route("/api/sites/{site_id}/stock", demand.create_stock, methods=["POST"]),
+    Route("/api/sites/{site_id}/stock-date", demand.set_stock_date, methods=["PUT"]),
+    Route("/api/stock/{stock_id}", demand.update_stock, methods=["PUT"]),
+    Route("/api/stock/{stock_id}", demand.delete_stock, methods=["DELETE"]),
+    Route("/api/sites/{site_id}/requirements", demand.requirements, methods=["GET"]),
+    Route("/api/sites/{site_id}/sample-demand", sample.load_sample_demand, methods=["POST"]),
     # Excel and sample data
     Route("/api/master/template", excel.template, methods=["GET"]),
     Route("/api/master/import", excel.import_file, methods=["POST"]),
