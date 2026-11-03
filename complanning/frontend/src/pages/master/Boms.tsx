@@ -4,7 +4,7 @@ import {
   Badge, Button, Confirm, Dialog, Empty, Field, LoadError, LoadingRows, Notice, PageHead, SelectField, TextField,
   errorText, fieldErrors, useLoad, useToast,
 } from "../../components/ui";
-import { NumberField, ReadOnlyNote, TypeBadge, numOrNull, str, useUoms } from "../../components/master";
+import { NumberField, PickProducedItem, ReadOnlyNote, TypeBadge, numOrNull, str, useUoms } from "../../components/master";
 import { ApiError, del, get, patch, post, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { Link, navigate } from "../../lib/router";
@@ -15,11 +15,25 @@ const LEVELS: ItemType[] = ["finished", "semi_finished", "wip"];
 
 export function Boms() {
   const { t, lang, qty } = useI18n();
+  const { editCompany } = usePerms();
   const list = useLoad(() => get<{ items: BomListRow[] }>("/api/boms"));
   const rows = list.data?.items ?? [];
+  const [picking, setPicking] = useState(false);
+  // Items without any version first, then the rest.
+  const options = [...rows].filter((r) => r.active)
+    .sort((a, b) => Number(a.versions.length > 0) - Number(b.versions.length > 0))
+    .map((r) => {
+      const act = r.versions.find((v) => v.status === "active");
+      const dr = r.versions.find((v) => v.status === "draft");
+      return { id: r.id, label: `${r.code} · ${nameOf(r, lang)}`, group: t(`type.${r.type}` as never),
+        note: dr ? t("boms.draft", { v: dr.version }) : act ? t("pick.newVersionOf", { v: act.version }) : t("pick.noneYet") };
+    });
   return (
     <>
-      <PageHead title={t("boms.title")} lead={t("boms.lead")} />
+      <PageHead title={t("boms.title")} lead={t("boms.lead")}
+        actions={editCompany ? <Button variant="primary" icon={<LuPlus />} onClick={() => setPicking(true)}>{t("boms.new")}</Button> : undefined} />
+      {picking && <PickProducedItem title={t("boms.new")} lead={t("boms.newLead")} options={options} canCreateItem={editCompany}
+        onClose={() => setPicking(false)} onPick={(id) => navigate(`/master/boms/${id}`)} />}
       {list.error ? <div className="panel"><LoadError error={list.error} onRetry={list.reload} /></div> : list.data && rows.length === 0 ? (
         <div className="panel"><Empty icon={<LuListTree />} title={t("boms.empty")} body={t("boms.emptyBody")}
           action={<Button onClick={() => navigate("/master/items")}>{t("nav.items")}</Button>} /></div>

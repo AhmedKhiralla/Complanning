@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { LuArrowLeft, LuArrowRight, LuGripVertical, LuPlus, LuSearch, LuStar, LuTrash2, LuWorkflow, LuX } from "react-icons/lu";
 import { Badge, Button, Empty, LoadError, LoadingRows, Notice, PageHead, errorText, fieldErrors, useLoad, useToast } from "../../components/ui";
-import { ReadOnlyNote, TypeBadge, str } from "../../components/master";
+import { PickProducedItem, ReadOnlyNote, TypeBadge, str } from "../../components/master";
 import { get, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { Link, navigate } from "../../lib/router";
@@ -15,13 +15,20 @@ interface RoutingRow {
 
 export function Routings() {
   const { t, lang } = useI18n();
-  const { siteId, site } = usePerms();
+  const { siteId, site, editSite, editCompany } = usePerms();
   const list = useLoad(() => (siteId ? get<{ items: RoutingRow[] }>(`/api/sites/${siteId}/routings`) : Promise.resolve(null)), [siteId]);
+  const [picking, setPicking] = useState(false);
   if (!siteId) return <><PageHead title={t("routings.title")} /><Notice>{t("common.noSite")}</Notice></>;
   const rows = list.data?.items ?? [];
+  const options = [...rows].sort((a, b) => Number(a.step_count > 0) - Number(b.step_count > 0)).map((r) => ({
+    id: r.item_id, label: `${r.code} · ${nameOf(r, lang)}`, group: t(`type.${r.type}` as never),
+    note: r.step_count ? t("pick.stepsDefined", { n: r.step_count }) : t("pick.noneYet") }));
   return (
     <>
-      <PageHead title={t("routings.title")} lead={t("routings.lead", { site: site?.name ?? "" })} />
+      <PageHead title={t("routings.title")} lead={t("routings.lead", { site: site?.name ?? "" })}
+        actions={editSite(siteId) ? <Button variant="primary" icon={<LuPlus />} onClick={() => setPicking(true)}>{t("routings.new")}</Button> : undefined} />
+      {picking && <PickProducedItem title={t("routings.new")} lead={t("routings.newLead", { site: site?.name ?? "" })} options={options}
+        canCreateItem={editCompany} onClose={() => setPicking(false)} onPick={(id) => navigate(`/master/routings/${id}`)} />}
       {list.error ? <div className="panel"><LoadError error={list.error} onRetry={list.reload} /></div> : list.data && rows.length === 0 ? (
         <div className="panel"><Empty icon={<LuWorkflow />} title={t("routings.empty")} body={t("boms.emptyBody")} /></div>
       ) : (

@@ -2,6 +2,7 @@
 import { useRef, useState } from "react";
 import { LuChevronDown, LuDownload, LuFileSpreadsheet, LuSparkles, LuUpload } from "react-icons/lu";
 import { ApiError, get, post, qs } from "../lib/api";
+import { navigate } from "../lib/router";
 import { useI18n } from "../lib/i18n";
 import type { ItemType, Market, Uom } from "../lib/types";
 import { Badge, Button, Confirm, Dialog, Field, Menu, Notice, errorText, useLoad, useToast } from "./ui";
@@ -148,4 +149,33 @@ export function SampleDataButton({ onLoaded }: { onLoaded: () => void }) {
 export function ReadOnlyNote({ show }: { show: boolean }) {
   const { t } = useI18n();
   return show ? <Notice>{t("common.readOnly")}</Notice> : null;
+}
+
+/** Choose a produced item to open its bill of materials or routing, or go create the item first. */
+export function PickProducedItem({ title, lead, options, onPick, onClose, canCreateItem }: {
+  title: string; lead: string; canCreateItem: boolean; onClose: () => void; onPick: (id: string) => void;
+  options: { id: string; label: string; group: string; note: string }[];
+}) {
+  const { t } = useI18n();
+  const [id, setId] = useState(options[0]?.id ?? "");
+  const groups = Array.from(new Set(options.map((o) => o.group)));
+  return (
+    <Dialog title={title} onClose={onClose} footer={<>
+      {canCreateItem && <Button variant="ghost" onClick={() => { onClose(); navigate("/master/items?new=produced"); }}>{t("pick.createItem")}</Button>}
+      <span className="spacer" />
+      <Button onClick={onClose}>{t("common.cancel")}</Button>
+      <Button variant="primary" disabled={!id} onClick={() => onPick(id)}>{t("pick.continue")}</Button>
+    </>}>
+      <p>{lead}</p>
+      {options.length === 0 ? <Notice>{t("pick.noItems")}</Notice> : (
+        <Field label={t("pick.item")}>{(fid) => (
+          <select id={fid} className="select" value={id} onChange={(e) => setId(e.target.value)} data-autofocus>
+            {groups.map((g) => <optgroup key={g} label={g}>
+              {options.filter((o) => o.group === g).map((o) => <option key={o.id} value={o.id}>{o.label} — {o.note}</option>)}
+            </optgroup>)}
+          </select>
+        )}</Field>
+      )}
+    </Dialog>
+  );
 }

@@ -184,7 +184,7 @@ function MarketsTab({ item, canEdit, onSaved }: { item: ItemDetail; canEdit: boo
   );
 }
 
-function ItemSheet({ itemId, uoms, onClose, onSaved }: { itemId: string | null; uoms: Uom[]; onClose: () => void; onSaved: () => void }) {
+function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: string | null; uoms: Uom[]; onClose: () => void; onSaved: () => void; defaultType?: ItemType }) {
   const { t, lang } = useI18n();
   const toast = useToast();
   const { editCompany } = usePerms();
@@ -194,7 +194,7 @@ function ItemSheet({ itemId, uoms, onClose, onSaved }: { itemId: string | null; 
   const [f, setF] = useState<Record<string, string>>({});
   const [flags, setFlags] = useState({ test_before_sale: false, active: true });
   const [code, setCode] = useState("");
-  const [type, setType] = useState<ItemType>("raw_material");
+  const [type, setType] = useState<ItemType>(defaultType ?? "raw_material");
   const [loadedFor, setLoadedFor] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
@@ -326,9 +326,14 @@ export function Items() {
   const { siteId } = useSession();
   const [q, setQ] = useState("");
   const [type, setType] = useState<ItemType | "">("");
+  const [newType] = useState<ItemType | undefined>(() => (new URLSearchParams(window.location.search).get("new") === "produced" ? "finished" : undefined));
   const items = useLoad(() => get<{ items: ItemRow[] }>("/api/items"));
   const uoms = useUoms();
-  const [open, setOpen] = useState<string | "new" | null>(null);
+  const [open, setOpen] = useState<string | "new" | null>(() => {
+    const p = new URLSearchParams(window.location.search).get("new");
+    if (p) window.history.replaceState(null, "", "/master/items");
+    return p ? "new" : null;
+  });
   const all = items.data?.items ?? [];
   const counts = useMemo(() => {
     const c: Record<string, number> = {};
@@ -388,7 +393,7 @@ export function Items() {
         )}
         {items.data && all.length > 0 && <div className="pager"><span>{t("items.count", { n: number(rows.length) })}</span></div>}
       </div>
-      {open && uoms.data && <ItemSheet itemId={open === "new" ? null : open} uoms={uoms.data.items} onClose={() => setOpen(null)} onSaved={items.reload} />}
+      {open && uoms.data && <ItemSheet itemId={open === "new" ? null : open} defaultType={open === "new" ? newType : undefined} uoms={uoms.data.items} onClose={() => setOpen(null)} onSaved={items.reload} />}
     </>
   );
 }
