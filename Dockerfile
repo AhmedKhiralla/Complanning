@@ -3,10 +3,8 @@
 # ---- build the web app
 FROM node:22-slim AS web
 WORKDIR /web
-COPY frontend/package.json ./
-RUN npm install --no-audit --no-fund
 COPY frontend/ ./
-RUN npm run build
+RUN rm -rf node_modules && npm install --no-audit --no-fund && npm run build
 
 # ---- run the API
 FROM python:3.13-slim
