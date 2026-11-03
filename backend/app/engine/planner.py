@@ -54,6 +54,7 @@ class Step:
     seq: int
     name: str
     options: list[Option]
+    uninterrupted: bool = False
 
 
 @dataclass
@@ -175,9 +176,11 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
         machines[rid] = Machine(rid, r["code"], base_cal.minus(down.get(rid, [])), float(r["efficiency_pct"] or 100) / 100,
                                 float(r["clean_hold_hours"]) if r["clean_hold_hours"] and rules["equipment_holds"] else None)
 
+    longest = {mid: m.cal.longest() for mid, m in machines.items()}
+
     # Routings: steps with qualified machines.
     routing = defaultdict(list)
-    for s in tx.q("SELECT rt.item_id, s.id, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes"
+    for s in tx.q("SELECT rt.item_id, s.id, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes, s.uninterrupted"
                   "  FROM routings rt JOIN routing_steps s ON s.routing_id = rt.id WHERE rt.site_id = %s::uuid ORDER BY s.seq", site["id"]):
         routing[str(s["item_id"])].append(s)
     step_res = defaultdict(list)
@@ -204,7 +207,12 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
                 opts.append(Option(m, float(s["setup_minutes"] or 0) + run / max(m.efficiency, 0.05)))
             if not opts:
                 return [], "no_machine"
-            out.append(Step(s["seq"], s["name"], opts))
+            if s["uninterrupted"]:
+                # Only machines whose working blocks are long enough for the whole step.
+                opts = [o for o in opts if o.minutes <= longest[o.machine.id]]
+                if not opts:
+                    return [], "no_window"
+            out.append(Step(s["seq"], s["name"], opts, bool(s["uninterrupted"])))
         return out, None
 
     # Low-level codes.
@@ -572,10 +580,17 @@ class Scheduler:
             if s2 is None:
                 return None
             start = m.cal.next_work(s2) or s2
-        end = m.cal.add_work(start, opt.minutes)
+        step = b.steps[self.next_step[b.key]]
+        if step.uninterrupted:
+            start = m.cal.fit(start, opt.minutes)
+            if start is None:
+                return None
+            end = start + dt.timedelta(minutes=opt.minutes)
+        else:
+            end = m.cal.add_work(start, opt.minutes)
         if end is None:
             return None
-        res = OpResult(b, b.steps[self.next_step[b.key]], m, co_start, co_end, work, wait, kind, ver, reclean, start, end, opt.minutes)
+        res = OpResult(b, step, m, co_start, co_end, work, wait, kind, ver, reclean, start, end, opt.minutes)
         self._cache[key] = (self._mver[m.id], ready, res)
         return res
 

@@ -139,3 +139,28 @@ def test_plan_permissions_edit_export_delete(co, plan):
     assert a.get(f"/api/plans/{plan['id']}")[0] == 404
     # A horizon that has passed is refused.
     assert a.post(f"/api/sites/{sid}/plans", {"horizon_start": "2020-01-01", "horizon_end": "2020-01-31"})[0] == 422
+
+
+def test_uninterrupted_steps_never_pause(plan):
+    # In the sample, wet granulation, drying, final blending and syrup preparation must not pause.
+    names = {"Wet granulation", "Drying", "Final blending", "Syrup preparation"}
+    checked = 0
+    for o in plan["operations"]:
+        if o["step_name"] in names:
+            elapsed = (ts(o["end_at"]) - ts(o["start_at"])).total_seconds() / 60
+            assert abs(elapsed - float(o["work_minutes"])) < 0.5, f"{o['step_name']} paused"
+            checked += 1
+    assert checked > 0
+
+
+def test_uninterrupted_flag_in_routing(co):
+    a, sid = co["admin"], co["sid"]
+    _, items, _ = a.get("/api/items")
+    blend = next(i["id"] for i in items["items"] if i["code"] == "WIP-PCM-BLEND")
+    _, r, _ = a.get(f"/api/sites/{sid}/routings/{blend}")
+    flags = {s["name"]: s["uninterrupted"] for s in r["steps"]}
+    assert flags["Wet granulation"] is True and flags["Dispensing"] is False
+    steps = [{**s, "uninterrupted": not s["uninterrupted"] if s["name"] == "Dispensing" else s["uninterrupted"]} for s in r["steps"]]
+    status, saved, _ = a.put(f"/api/sites/{sid}/routings/{blend}", {"steps": steps})
+    assert status == 200, saved
+    assert {s["name"]: s["uninterrupted"] for s in saved["steps"]}["Dispensing"] is True

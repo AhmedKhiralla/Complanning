@@ -182,6 +182,9 @@ MACHINES = [
 ]
 QC_RESOURCES = [("QC-HPLC", "HPLC laboratory", "معمل HPLC", "Quality control")]
 
+# Steps that must run without a pause.
+UNINTERRUPTED = {"Wet granulation", "Drying", "Final blending", "Syrup preparation"}
+
 # item: steps (name, model, minutes or rate per hour, setup minutes, [(machine, preferred, own value)])
 ROUTINGS = {
     "WIP-PCM-BLEND": [
@@ -479,9 +482,9 @@ def load_sample(call: Call):
     for item_code, steps in ROUTINGS.items():
         rt = _uuid(call, "INSERT INTO routings (tenant_id, site_id, item_id) VALUES (%s, %s, %s) RETURNING id", tenant, site_id, items[item_code])
         for seq, (name, model, value, setup, res) in enumerate(steps, start=1):
-            step = _uuid(call, "INSERT INTO routing_steps (tenant_id, routing_id, seq, name, time_model, fixed_minutes, rate_per_hour, setup_minutes)"
-                               " VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", tenant, rt, seq, name, model,
-                         value if model == "fixed" else None, value if model == "rate" else None, setup)
+            step = _uuid(call, "INSERT INTO routing_steps (tenant_id, routing_id, seq, name, time_model, fixed_minutes, rate_per_hour,"
+                               " setup_minutes, uninterrupted) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id", tenant, rt, seq, name, model,
+                         value if model == "fixed" else None, value if model == "rate" else None, setup, name in UNINTERRUPTED)
             for mcode, pref, own in res:
                 tx.x("INSERT INTO routing_step_resources (tenant_id, step_id, resource_id, preferred, fixed_minutes, rate_per_hour)"
                      " VALUES (%s, %s, %s, %s, %s, %s)", tenant, step, machines[mcode], pref,

@@ -164,7 +164,7 @@ def _routing(call: Call, site_id: str, item_id: str) -> dict:
     steps = []
     if rt:
         steps = call.tx.q(
-            """SELECT s.id, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes,
+            """SELECT s.id, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes, s.uninterrupted,
                       coalesce((SELECT json_agg(json_build_object('id', sr.id, 'resource_id', sr.resource_id, 'preferred', sr.preferred,
                                  'fixed_minutes', sr.fixed_minutes, 'rate_per_hour', sr.rate_per_hour)
                                  ORDER BY sr.preferred DESC, sr.created_at)
@@ -196,6 +196,7 @@ class StepIn(BaseModel):
     fixed_minutes: Decimal | None = Field(default=None, gt=0)
     rate_per_hour: Decimal | None = Field(default=None, gt=0)
     setup_minutes: Decimal = Field(default=Decimal(0), ge=0)
+    uninterrupted: bool = False
     resources: list[StepResourceIn] = Field(default_factory=list)
 
 
@@ -249,12 +250,13 @@ def save_routing(call: Call):
         if s.id and s.id in existing:
             step_id = s.id
             call.tx.x("UPDATE routing_steps SET seq = %s, name = %s, time_model = %s, fixed_minutes = %s, rate_per_hour = %s,"
-                      " setup_minutes = %s WHERE id = %s::uuid", seq, s.name.strip(), s.time_model, fixed, rate, s.setup_minutes, step_id)
+                      " setup_minutes = %s, uninterrupted = %s WHERE id = %s::uuid", seq, s.name.strip(), s.time_model, fixed, rate,
+                      s.setup_minutes, s.uninterrupted, step_id)
         else:
             step_id = str(call.tx.val(
-                "INSERT INTO routing_steps (tenant_id, routing_id, seq, name, time_model, fixed_minutes, rate_per_hour, setup_minutes)"
-                " VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-                call.tenant_id, rt["id"], seq, s.name.strip(), s.time_model, fixed, rate, s.setup_minutes))
+                "INSERT INTO routing_steps (tenant_id, routing_id, seq, name, time_model, fixed_minutes, rate_per_hour, setup_minutes,"
+                " uninterrupted) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                call.tenant_id, rt["id"], seq, s.name.strip(), s.time_model, fixed, rate, s.setup_minutes, s.uninterrupted))
         # Exactly one preferred machine per step: the first marked, otherwise the first listed.
         pref_index = next((i for i, r in enumerate(s.resources) if r.preferred), 0)
         current = {str(r["resource_id"]): r for r in call.tx.q(

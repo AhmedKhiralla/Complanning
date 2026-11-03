@@ -178,8 +178,9 @@ frontend/
      serves needs inside the product's maximum hold time; otherwise a new batch is made.
   3. It places operations on machines in time, respecting:
      - routings and alternative machines (with their own speed and efficiency);
-     - shifts, Ramadan periods, confirmed holidays and planned downtime (a step pauses outside working
-       time);
+     - shifts, Ramadan periods, confirmed holidays and planned downtime. A step pauses outside working
+       time, unless the routing marks it "No pause": then it is placed only where it fits inside one
+       block of working time;
      - changeovers from the rules, with cleaning and format change as working time and the wait for
        verification results as elapsed time;
      - campaign limits (a full clean after the maximum batches or days);

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type DragEvent } from "react";
 import { LuArrowLeft, LuArrowRight, LuGripVertical, LuPlus, LuSearch, LuStar, LuTrash2, LuWorkflow, LuX } from "react-icons/lu";
-import { Badge, Button, Empty, LoadError, LoadingRows, Notice, PageHead, errorText, fieldErrors, useLoad, useToast } from "../../components/ui";
+import { Switch, Badge, Button, Empty, LoadError, LoadingRows, Notice, PageHead, errorText, fieldErrors, useLoad, useToast } from "../../components/ui";
 import { PickProducedItem, ReadOnlyNote, TypeBadge, str } from "../../components/master";
 import { get, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
@@ -236,6 +236,11 @@ export function RoutingEditor({ itemId }: { itemId: string }) {
                           <input className="input num" type="number" min="0" step="any" disabled={!canEdit} value={str(s.setup_minutes)}
                             onChange={(e) => update(s.key, (x) => ({ ...x, setup_minutes: Number(e.target.value || 0) }))} />
                         </label>
+                        <div className="no-pause" title={t("routings.uninterruptedHint")}>
+                          <Switch label={t("routings.uninterrupted")} checked={!!s.uninterrupted} disabled={!canEdit}
+                            onChange={(v) => update(s.key, (x) => ({ ...x, uninterrupted: v }))} />
+                          <span>{t("routings.uninterrupted")}</span>
+                        </div>
                       </div>
 
                       <div className={`dropzone ${s.resources.length ? "" : "empty"}`}>
@@ -308,9 +313,9 @@ function FlowLink({ faint }: { faint?: boolean }) {
 }
 
 function strip(steps: EStep[]) {
-  return steps.map(({ id, name, time_model, fixed_minutes, rate_per_hour, setup_minutes, resources }) => ({
+  return steps.map(({ id, name, time_model, fixed_minutes, rate_per_hour, setup_minutes, uninterrupted, resources }) => ({
     id, name, time_model, fixed_minutes: time_model === "fixed" ? fixed_minutes : null, rate_per_hour: time_model === "rate" ? rate_per_hour : null,
-    setup_minutes: Number(setup_minutes || 0),
+    setup_minutes: Number(setup_minutes || 0), uninterrupted: !!uninterrupted,
     resources: resources.map((r) => ({ resource_id: r.resource_id, preferred: r.preferred,
       fixed_minutes: time_model === "fixed" ? r.fixed_minutes ?? null : null, rate_per_hour: time_model === "rate" ? r.rate_per_hour ?? null : null })),
   }));

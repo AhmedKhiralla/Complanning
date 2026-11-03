@@ -54,6 +54,21 @@ class WorkCalendar:
             i += 1
         return None
 
+    def fit(self, t: dt.datetime, minutes: float) -> dt.datetime | None:
+        """Earliest start at or after t where `minutes` fit inside one block of working time without a pause."""
+        need = dt.timedelta(minutes=max(minutes, 0))
+        i = self._idx(t)
+        while i < len(self.starts):
+            s = max(t, self.starts[i])
+            if self.ends[i] - s >= need:
+                return s
+            i += 1
+        return None
+
+    def longest(self) -> float:
+        """Longest block of working time, in minutes."""
+        return max(((e - s).total_seconds() / 60 for s, e in zip(self.starts, self.ends)), default=0.0)
+
     def work_minutes(self, a: dt.datetime, b: dt.datetime) -> float:
         """Working minutes between a and b."""
         if b <= a:
