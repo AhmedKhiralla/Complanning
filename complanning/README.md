@@ -2,8 +2,17 @@
 
 Production planning for pharmaceutical and other manufacturing companies, by **Comp11 Labs**.
 
-This is **Phase 1 – Foundation**: companies (tenants), sites, users and per-site roles, company settings
-(feature toggles, terminology, password and session policy), and a database-enforced audit trail.
+Released so far:
+
+- **Phase 1 – Foundation**: companies (tenants), sites, users and per-site roles, company settings
+  (feature toggles, terminology, password and session policy), and a database-enforced audit trail.
+- **Phase 2 – Master data**: units and pack conversions, items and materials, markets with sales limits
+  and a never-overwritten price history, versioned multi-level bills of materials (assay compensation,
+  overage, compensating material, partial batches, multi-level explosion, lot check), machines with
+  planned downtime, drag-and-drop routings with alternative machines, working calendars (shifts, Ramadan
+  periods, national holidays as proposals to confirm), Excel templates, import and export, and a
+  one-click pharmaceutical sample dataset.
+
 The web app is English and Arabic (right-to-left), with light, dark and system themes.
 
 ## How it is built
@@ -117,8 +126,24 @@ frontend/
   public/brand/       Comp11 Labs logo (light and dark), favicon
 ```
 
+## Master data rules worth knowing
+
+- **Who can change what.** Company-wide data (units, items, markets, prices, bills of materials): company
+  administrators and master-data editors of any site. Site data (machines, downtime, routings, calendar):
+  administrators and master-data editors of that site. Everyone else can read.
+- **Prices** are never edited. A new price ends the current one the day before it starts; overlapping
+  periods are rejected by the database.
+- **Bills of materials** have versions. Only a draft can be edited; activating it archives the previous
+  version on the day before the new one starts. Loops (an item inside its own structure) are refused.
+- **Assay compensation**: actual = standard × 100 ÷ assay × 100 ÷ (100 − LOD) × (1 + overage ÷ 100); the
+  compensating material absorbs the difference. The BOM screen's "Check a lot" shows the effect.
+- **Holiday import** first asks the public Nager.Date service; when it has no data for the country it uses
+  the built-in Egyptian list for 2026–2027. Imported days are proposals: only confirmed days stop
+  production, because Islamic holiday dates are announced late.
+- **Excel import** (items, machines) is all-or-nothing and matched by code; the screen shows a check of
+  the file before anything is saved.
+
 ## Next phase
 
-Phase 2 – Master data: units and conversions, items and materials, markets and price history,
-bills of materials with versions, machines and routings with the drag-and-drop flow editor, calendars.
-See the specification document for the full plan.
+Phase 3 – Rules: changeover matrix by cleaning group, cleaning verification and its waiting time, clean
+and dirty equipment hold times, campaign limits, product holding times and QC lead times.

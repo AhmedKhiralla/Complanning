@@ -49,7 +49,7 @@ def _default(o: Any):
         if o.tzinfo is None:
             o = o.replace(tzinfo=dt.timezone.utc)
         return o.astimezone(dt.timezone.utc).isoformat().replace("+00:00", "Z")
-    if isinstance(o, dt.date):
+    if isinstance(o, (dt.date, dt.time)):
         return o.isoformat()
     if isinstance(o, decimal.Decimal):
         return float(o)

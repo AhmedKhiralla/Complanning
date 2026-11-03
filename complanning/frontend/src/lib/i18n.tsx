@@ -16,6 +16,8 @@ interface I18n {
   dateTime: (iso: string | null | undefined, tz?: string) => string;
   date: (iso: string | null | undefined, tz?: string) => string;
   number: (n: number) => string;
+  /** Quantity with up to `max` decimals. */
+  qty: (n: number | string | null | undefined, max?: number) => string;
   countryName: (code: string) => string;
 }
 
@@ -81,6 +83,12 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       dateTime: (iso, tz) => (iso ? fmt(tz, true).format(new Date(iso)) : ""),
       date: (iso, tz) => (iso ? fmt(tz, false).format(new Date(iso)) : ""),
       number: (n) => nf.format(n),
+      qty: (n, max = 3) => {
+        if (n === null || n === undefined || n === "") return "";
+        const v = typeof n === "string" ? Number(n) : n;
+        if (!Number.isFinite(v)) return String(n);
+        return new Intl.NumberFormat(locale, { maximumFractionDigits: max }).format(v);
+      },
       countryName: (code) => {
         try { return regions?.of(code) ?? code; } catch { return code; }
       },

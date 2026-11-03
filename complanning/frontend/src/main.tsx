@@ -5,7 +5,7 @@ import "./styles.css";
 import { Shell } from "./components/Shell";
 import { Button, Empty, ToastProvider } from "./components/ui";
 import { I18nProvider, useI18n } from "./lib/i18n";
-import { navigate, usePath } from "./lib/router";
+import { match, navigate, usePath } from "./lib/router";
 import { SessionProvider, useSession } from "./lib/session";
 import { ThemeProvider } from "./lib/theme";
 import { Audit } from "./pages/Audit";
@@ -17,6 +17,12 @@ import { Settings } from "./pages/Settings";
 import { Sites } from "./pages/Sites";
 import { Users } from "./pages/Users";
 import { Logo } from "./components/Logo";
+import { BomEditor, Boms } from "./pages/master/Boms";
+import { CalendarPage } from "./pages/master/Calendar";
+import { Items } from "./pages/master/Items";
+import { Machines } from "./pages/master/Machines";
+import { RoutingEditor, Routings } from "./pages/master/Routings";
+import { Units } from "./pages/master/Units";
 
 function NotFound() {
   const { t } = useI18n();
@@ -37,7 +43,17 @@ function Routes() {
   const platform = me.user.is_platform_admin;
   const admin = me.user.is_tenant_admin;
   const gate = (ok: boolean, el: ReactElement) => (ok ? el : <Forbidden />);
+  const tenantUser = !!me.tenant;
+  let m: Record<string, string> | null;
+  if ((m = match("/master/boms/:id", path))) return gate(tenantUser, <BomEditor key={m.id} itemId={m.id} />);
+  if ((m = match("/master/routings/:id", path))) return gate(tenantUser, <RoutingEditor key={m.id} itemId={m.id} />);
   switch (path) {
+    case "/master/items": return gate(tenantUser, <Items />);
+    case "/master/units": return gate(tenantUser, <Units />);
+    case "/master/boms": return gate(tenantUser, <Boms />);
+    case "/master/machines": return gate(tenantUser, <Machines />);
+    case "/master/routings": return gate(tenantUser, <Routings />);
+    case "/master/calendar": return gate(tenantUser, <CalendarPage />);
     case "/": return <Home />;
     case "/companies": return gate(platform, <Companies />);
     case "/users": return gate(admin, <Users />);

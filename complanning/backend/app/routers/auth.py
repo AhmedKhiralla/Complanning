@@ -125,12 +125,12 @@ def me_payload(call: Call) -> dict:
             "terminology": effective_terms(t["terminology"]),
         }
         if u["is_tenant_admin"]:
-            sites = tx.q("SELECT id, code, name, timezone, active FROM sites WHERE active ORDER BY code")
+            sites = tx.q("SELECT id, code, name, country, timezone, active FROM sites WHERE active ORDER BY code")
             for s in sites:
                 s["roles"] = ["admin"]
         else:
             sites = tx.q(
-                "SELECT s.id, s.code, s.name, s.timezone, s.active,"
+                "SELECT s.id, s.code, s.name, s.country, s.timezone, s.active,"
                 "       array_to_string(array_agg(r.role ORDER BY r.role), ',') AS role_list"
                 "  FROM sites s JOIN user_site_roles r ON r.site_id = s.id"
                 " WHERE r.user_id = %s AND s.active GROUP BY s.id ORDER BY s.code", u["id"])

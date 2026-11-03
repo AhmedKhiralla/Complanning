@@ -4,7 +4,7 @@ import { ApiError, get, onAuthError, patch, post } from "./api";
 import { useI18n, type Lang } from "./i18n";
 import { useTheme, type ThemeChoice } from "./theme";
 
-export interface Site { id: string; code: string; name: string; timezone: string; active: boolean; roles: string[]; }
+export interface Site { id: string; code: string; name: string; country: string; timezone: string; active: boolean; roles: string[]; }
 export interface Me {
   user: {
     id: string; email: string; full_name: string; is_platform_admin: boolean; is_tenant_admin: boolean;
@@ -113,4 +113,15 @@ export function useTerm() {
   const { me } = useSession();
   const { lang } = useI18n();
   return (key: string, fallback: string) => me?.tenant?.terminology?.[key]?.[lang] ?? fallback;
+}
+
+/** What the signed-in user may change. */
+export function usePerms() {
+  const { me, siteId } = useSession();
+  const admin = !!me?.user.is_tenant_admin;
+  const editCompany = admin || !!me?.sites.some((s) => s.roles.includes("master_data_editor"));
+  const editSite = (id: string | null | undefined) =>
+    admin || !!(id && me?.sites.find((s) => s.id === id)?.roles.includes("master_data_editor"));
+  const site = me?.sites.find((s) => s.id === siteId) ?? null;
+  return { admin, editCompany, editSite, site, siteId };
 }

@@ -208,8 +208,9 @@ function useFocusTrap(ref: RefObject<HTMLElement | null>) {
   }, [ref]);
 }
 
-export function Sheet({ title, lead, onClose, children, footer, onSubmit }: {
-  title: string; lead?: ReactNode; onClose: () => void; children: ReactNode; footer: ReactNode; onSubmit?: () => void;
+export function Sheet({ title, lead, onClose, children, footer, onSubmit, wide, toolbar }: {
+  title: string; lead?: ReactNode; onClose: () => void; children: ReactNode; footer: ReactNode; onSubmit?: () => void; wide?: boolean;
+  toolbar?: ReactNode;
 }) {
   const ref = useRef<HTMLFormElement>(null);
   const { t } = useI18n();
@@ -219,7 +220,7 @@ export function Sheet({ title, lead, onClose, children, footer, onSubmit }: {
   return (
     <Portal>
       <div className="overlay" onClick={onClose} />
-      <form ref={ref} className="sheet" role="dialog" aria-modal="true" aria-labelledby={titleId}
+      <form ref={ref} className={`sheet ${wide ? "wide" : ""}`} role="dialog" aria-modal="true" aria-labelledby={titleId}
         onSubmit={(e) => { e.preventDefault(); onSubmit?.(); }} noValidate>
         <div className="sheet-head">
           <div className="titles">
@@ -228,6 +229,7 @@ export function Sheet({ title, lead, onClose, children, footer, onSubmit }: {
           </div>
           <Button variant="ghost" iconOnly onClick={onClose} aria-label={t("common.close")} icon={<LuX />} />
         </div>
+        {toolbar && <div className="sheet-toolbar">{toolbar}</div>}
         <div className="sheet-body">{children}</div>
         <div className="sheet-foot">{footer}</div>
       </form>

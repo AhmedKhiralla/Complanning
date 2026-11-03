@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   LuBoxes, LuBuilding2, LuCalendarDays, LuChartGantt, LuChevronDown, LuClipboardList, LuFactory, LuHouse,
   LuKeyRound, LuLanguages, LuListTree, LuLogOut, LuMenu, LuMonitor, LuMoon, LuScrollText, LuSettings, LuSun,
-  LuUsers, LuWorkflow, LuX,
+  LuMapPin, LuRuler, LuUsers, LuWorkflow, LuX,
 } from "react-icons/lu";
 import { useI18n } from "../lib/i18n";
 import { Link, navigate, usePath } from "../lib/router";
@@ -32,16 +32,18 @@ function groupsFor(isPlatform: boolean, isAdmin: boolean): NavGroup[] {
       { label: "nav.salesPlan", icon: <LuClipboardList />, phase: 4 },
     ] },
     { title: "nav.masterData", items: [
-      { label: "nav.items", icon: <LuBoxes />, phase: 2 },
-      { label: "nav.boms", icon: <LuListTree />, phase: 2 },
-      { label: "nav.machines", icon: <LuWorkflow />, phase: 2 },
-      { label: "nav.calendars", icon: <LuCalendarDays />, phase: 2 },
+      { to: "/master/items", label: "nav.items", icon: <LuBoxes /> },
+      { to: "/master/units", label: "nav.units", icon: <LuRuler /> },
+      { to: "/master/boms", label: "nav.boms", icon: <LuListTree /> },
+      { to: "/master/machines", label: "nav.machines", icon: <LuFactory /> },
+      { to: "/master/routings", label: "nav.routings", icon: <LuWorkflow /> },
+      { to: "/master/calendar", label: "nav.calendars", icon: <LuCalendarDays /> },
     ] },
   ];
   if (isAdmin) {
     groups.push({ title: "nav.admin", items: [
       { to: "/users", label: "nav.users", icon: <LuUsers /> },
-      { to: "/sites", label: "nav.sites", icon: <LuFactory /> },
+      { to: "/sites", label: "nav.sites", icon: <LuMapPin /> },
       { to: "/settings", label: "nav.settings", icon: <LuSettings /> },
       { to: "/audit", label: "nav.audit", icon: <LuScrollText /> },
     ] });
@@ -88,7 +90,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
-        <div className="sidebar-foot">{t("shell.version", { v: "0.1" })} · Comp11 Labs</div>
+        <div className="sidebar-foot">{t("shell.version", { v: "0.2" })} · Comp11 Labs</div>
       </aside>
       {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
 

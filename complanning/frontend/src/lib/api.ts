@@ -52,6 +52,7 @@ export const get = <T = any>(path: string) => api<T>("GET", path);
 export const post = <T = any>(path: string, body: unknown = {}) => api<T>("POST", path, body);
 export const patch = <T = any>(path: string, body: unknown) => api<T>("PATCH", path, body);
 export const put = <T = any>(path: string, body: unknown) => api<T>("PUT", path, body);
+export const del = <T = any>(path: string) => api<T>("DELETE", path);
 
 export function qs(params: Record<string, string | number | undefined | null>) {
   const p = new URLSearchParams();

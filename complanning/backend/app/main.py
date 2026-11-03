@@ -14,7 +14,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from .config import settings
-from .routers import audit_trail, auth, company, platform
+from .routers import audit_trail, auth, boms, company, excel, master, platform, production, sample
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -50,6 +50,53 @@ API_ROUTES = [
     Route("/api/settings/features", company.update_features, methods=["PUT"]),
     Route("/api/settings/terminology", company.update_terminology, methods=["PUT"]),
     Route("/api/settings/security", company.update_security, methods=["PUT"]),
+    # Master data: company-wide
+    Route("/api/uoms", master.list_uoms, methods=["GET"]),
+    Route("/api/uoms", master.create_uom, methods=["POST"]),
+    Route("/api/uoms/{uom_id}", master.update_uom, methods=["PATCH"]),
+    Route("/api/items", master.list_items, methods=["GET"]),
+    Route("/api/items", master.create_item, methods=["POST"]),
+    Route("/api/items/{item_id}", master.get_item, methods=["GET"]),
+    Route("/api/items/{item_id}", master.update_item, methods=["PATCH"]),
+    Route("/api/items/{item_id}/conversions", master.set_conversions, methods=["PUT"]),
+    Route("/api/items/{item_id}/markets", master.set_item_markets, methods=["PUT"]),
+    Route("/api/items/{item_id}/prices", master.add_price, methods=["POST"]),
+    Route("/api/prices/{price_id}/end", master.end_price, methods=["POST"]),
+    Route("/api/markets", master.list_markets, methods=["GET"]),
+    Route("/api/markets", master.create_market, methods=["POST"]),
+    Route("/api/markets/{market_id}", master.update_market, methods=["PATCH"]),
+    Route("/api/boms", boms.list_boms, methods=["GET"]),
+    Route("/api/items/{item_id}/boms", boms.create_bom, methods=["POST"]),
+    Route("/api/boms/{bom_id}", boms.get_bom, methods=["GET"]),
+    Route("/api/boms/{bom_id}", boms.update_bom, methods=["PATCH"]),
+    Route("/api/boms/{bom_id}", boms.discard_bom, methods=["DELETE"]),
+    Route("/api/boms/{bom_id}/lines", boms.set_lines, methods=["PUT"]),
+    Route("/api/boms/{bom_id}/activate", boms.activate_bom, methods=["POST"]),
+    Route("/api/boms/{bom_id}/explode", boms.explode_bom, methods=["GET"]),
+    # Master data: per site
+    Route("/api/sites/{site_id}/resources", production.list_resources, methods=["GET"]),
+    Route("/api/sites/{site_id}/resources", production.create_resource, methods=["POST"]),
+    Route("/api/resources/{resource_id}", production.update_resource, methods=["PATCH"]),
+    Route("/api/sites/{site_id}/downtime", production.list_exceptions, methods=["GET"]),
+    Route("/api/sites/{site_id}/downtime", production.create_exception, methods=["POST"]),
+    Route("/api/downtime/{exception_id}", production.delete_exception, methods=["DELETE"]),
+    Route("/api/sites/{site_id}/routings", production.list_routings, methods=["GET"]),
+    Route("/api/sites/{site_id}/routings/{item_id}", production.get_routing, methods=["GET"]),
+    Route("/api/sites/{site_id}/routings/{item_id}", production.save_routing, methods=["PUT"]),
+    Route("/api/sites/{site_id}/calendar", production.get_calendar, methods=["GET"]),
+    Route("/api/sites/{site_id}/calendar/hours", production.calendar_hours, methods=["GET"]),
+    Route("/api/sites/{site_id}/calendar/periods", production.create_period, methods=["POST"]),
+    Route("/api/calendar/periods/{period_id}", production.delete_period, methods=["DELETE"]),
+    Route("/api/sites/{site_id}/calendar/shifts", production.save_shifts, methods=["PUT"]),
+    Route("/api/sites/{site_id}/holidays", production.add_holiday, methods=["POST"]),
+    Route("/api/sites/{site_id}/holidays/import", production.import_holidays, methods=["POST"]),
+    Route("/api/holidays/{holiday_id}", production.update_holiday, methods=["PATCH"]),
+    Route("/api/holidays/{holiday_id}", production.delete_holiday, methods=["DELETE"]),
+    # Excel and sample data
+    Route("/api/master/template", excel.template, methods=["GET"]),
+    Route("/api/master/import", excel.import_file, methods=["POST"]),
+    Route("/api/master/export", excel.export_master, methods=["GET"]),
+    Route("/api/sample-data", sample.load_sample, methods=["POST"]),
     # Audit trail
     Route("/api/audit", audit_trail.list_audit, methods=["GET"]),
     Route("/api/audit/facets", audit_trail.audit_facets, methods=["GET"]),

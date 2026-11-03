@@ -94,6 +94,7 @@ def create_tenant(call: Call):
         " VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb) RETURNING id, code, name",
         b.code, b.name.strip(), b.country, b.timezone, b.default_language,
         json.dumps(feature_preset(b.preset)), json.dumps(DEFAULT_POLICY))
+    call.tx.x("SELECT cp_seed_uoms(%s::uuid)", tenant["id"])
     user, temp = _create_user(call, str(tenant["id"]), b.admin)
     return {"tenant": tenant, "admin": user, "temporary_password": temp}
 

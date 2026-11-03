@@ -1,6 +1,7 @@
 // Interface text in English and Arabic. Keys are shared; {name} placeholders are filled by t().
+import { masterAr, masterEn } from "./strings_master";
 
-export const en = {
+const enBase = {
   "app.name": "Complanning",
   "app.by": "by Comp11 Labs",
   "app.loading": "Loading…",
@@ -378,9 +379,10 @@ export const en = {
   "forbidden.body": "Ask your company administrator for the role you need.",
 };
 
+export const en = { ...enBase, ...masterEn };
 export type StringKey = keyof typeof en;
 
-export const ar: Record<StringKey, string> = {
+const arBase: Record<keyof typeof enBase, string> = {
   "app.name": "Complanning",
   "app.by": "من Comp11 Labs",
   "app.loading": "جارٍ التحميل…",
@@ -744,3 +746,5 @@ export const ar: Record<StringKey, string> = {
   "forbidden.title": "ليست لديك صلاحية لهذه الصفحة",
   "forbidden.body": "اطلب من مسؤول شركتك الدور المناسب.",
 };
+
+export const ar: Record<StringKey, string> = { ...arBase, ...masterAr };
