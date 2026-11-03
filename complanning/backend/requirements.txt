@@ -1,0 +1,6 @@
+# Complanning backend
+starlette==1.7.0
+uvicorn[standard]==0.54.0
+pydantic==2.13.5
+psycopg[binary]>=3.2,<4
+openpyxl==3.1.5
