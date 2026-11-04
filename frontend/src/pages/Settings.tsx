@@ -107,7 +107,7 @@ function FeaturesTab({ data, onSaved }: { data: SettingsData; onSaved: (d: Setti
 
 function AssistantConnection() {
   const { t, qty } = useI18n();
-  const status = useLoad(() => get<{ configured: boolean; model: string }>("/api/assistant/status"));
+  const status = useLoad(() => get<{ configured: boolean; model: string; base_url?: string | null }>("/api/assistant/status"));
   const usage = useLoad(() => get<{ days: { questions: number; prompt_tokens: number; completion_tokens: number }[] }>("/api/assistant/usage"));
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
@@ -119,6 +119,7 @@ function AssistantConnection() {
       {st && !st.configured ? <Notice tone="warn">{t("ai.settings.notConfigured")}</Notice> : st && <>
         <div className="row wrap" style={{ gap: 12 }}>
           <span className="small mono-id">{t("ai.settings.model", { model: st.model })}</span>
+          {st.base_url && <span className="small mono-id subtle" dir="ltr">{st.base_url}</span>}
           <Button size="sm" busy={busy} onClick={async () => {
             setBusy(true); setResult(null);
             try { const r = await post<{ ms: number }>("/api/assistant/test"); setResult({ ok: true, text: t("ai.settings.ok", { ms: r.ms }) }); }

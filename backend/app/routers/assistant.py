@@ -67,6 +67,7 @@ def status(call: Call):
     used = _used_today(call)
     return {"configured": bool(settings.ai_api_key), "enabled": _enabled(call),
             "available": bool(settings.ai_api_key) and _enabled(call), "model": settings.ai_model,
+            "base_url": settings.ai_base_url if call.user["is_tenant_admin"] else None,
             "used_today": used, "daily_limit": settings.ai_daily_limit,
             "remaining": max(0, settings.ai_daily_limit - used)}
 
@@ -144,9 +145,17 @@ def chat(call: Call):
 def test_connection(call: Call):
     """Company administrators check that the server's AI settings work (key, address and model)."""
     t0 = time.monotonic()
-    res = client.chat([{"role": "user", "content": "Reply with the single word OK."}], max_tokens=5)
-    return {"ok": True, "model": settings.ai_model, "reply": (res["message"].get("content") or "").strip()[:40],
-            "ms": int((time.monotonic() - t0) * 1000)}
+    try:
+        res = client.chat([{"role": "user", "content": "Reply with the single word OK."}], max_tokens=5)
+    except ApiError as e:
+        if e.code in ("ai_model", "ai_error"):
+            models = client.list_models()
+            if models:
+                e.extra = {**(e.extra or {}), "models": models[:80], "base_url": settings.ai_base_url}
+                e.message += f" Models this key can use: {', '.join(models[:30])}."
+        raise
+    return {"ok": True, "model": settings.ai_model, "base_url": settings.ai_base_url,
+            "reply": (res["message"].get("content") or "").strip()[:40], "ms": int((time.monotonic() - t0) * 1000)}
 
 
 @endpoint(auth="tenant_admin")

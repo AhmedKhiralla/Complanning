@@ -35,7 +35,9 @@ def chat(messages: list[dict], tools: list[dict] | None = None, max_tokens: int 
                                            "address of the region or workspace where the key was created." + (f" ({detail})" if detail else ""))
         if e.code == 404:
             raise ApiError(502, "ai_model", f"The AI service does not know the model or address. Check AI_MODEL "
-                                            f"({settings.ai_model}) and AI_BASE_URL." + (f" ({detail})" if detail else ""))
+                                            f"({settings.ai_model}) and AI_BASE_URL ({settings.ai_base_url}). An administrator can "
+                                            f"use Company settings → Features → Test connection to see the models this key can use."
+                                            + (f" ({detail})" if detail else ""))
         if e.code == 429:
             raise ApiError(429, "ai_busy", "The AI service is busy or the account's quota is used up. Try again shortly.")
         raise ApiError(502, "ai_error", "The AI service returned an error." + (f" ({detail[:200]})" if detail else ""))
@@ -46,3 +48,17 @@ def chat(messages: list[dict], tools: list[dict] | None = None, max_tokens: int 
     except (KeyError, IndexError, TypeError):
         raise ApiError(502, "ai_error", "The AI service returned an answer in an unexpected format.")
     return {"message": msg, "usage": data.get("usage") or {}}
+
+
+def list_models() -> list[str]:
+    """Model IDs the service offers to this key (OpenAI-compatible GET /models), or [] when it cannot say."""
+    if not settings.ai_api_key:
+        return []
+    req = urllib.request.Request(settings.ai_base_url + "/models", method="GET")
+    req.add_header("Authorization", f"Bearer {settings.ai_api_key}")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read())
+        return sorted({m.get("id") for m in data.get("data") or [] if isinstance(m, dict) and m.get("id")})
+    except Exception:
+        return []
