@@ -9,6 +9,7 @@ import {
 } from "react-icons/lu";
 import { ApiError } from "../lib/api";
 import { useI18n } from "../lib/i18n";
+import { TourButton } from "./guide";
 
 // ------------------------------------------------------------------ Button
 type BtnProps = ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -117,7 +118,7 @@ export function PageHead({ title, lead, actions }: { title: string; lead?: React
   return (
     <div className="page-head">
       <div className="titles">
-        <h1>{title}</h1>
+        <h1>{title}<TourButton /></h1>
         {lead && <p>{lead}</p>}
       </div>
       {actions && <div className="actions">{actions}</div>}

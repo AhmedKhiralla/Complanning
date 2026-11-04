@@ -2,14 +2,15 @@ import { useEffect, useState, type ReactNode } from "react";
 import {
   LuBoxes, LuBuilding2, LuCalendarDays, LuChartGantt, LuChevronDown, LuClipboardList, LuFactory, LuHouse,
   LuKeyRound, LuLanguages, LuListTree, LuLogOut, LuMenu, LuMonitor, LuMoon, LuScrollText, LuSettings, LuSun,
-  LuMapPin, LuRuler, LuUsers, LuWorkflow, LuX, LuArrowRightLeft, LuRepeat, LuTimer, LuPackage, LuCalculator,
+  LuMapPin, LuRuler, LuUsers, LuWorkflow, LuX, LuArrowRightLeft, LuRepeat, LuTimer, LuPackage, LuCalculator, LuListChecks, LuCircleHelp,
 } from "react-icons/lu";
 import { useI18n } from "../lib/i18n";
 import { Link, navigate, usePath } from "../lib/router";
 import { useSession } from "../lib/session";
 import { useTheme } from "../lib/theme";
 import type { StringKey } from "../lib/strings";
-import { Button, Menu, MenuItem, initials } from "./ui";
+import { Button, Menu, MenuItem, initials, useToast } from "./ui";
+import { TourProvider, useGuidePrefs } from "./guide";
 import { Logo } from "./Logo";
 
 type NavItem = { to?: string; label: StringKey; icon: ReactNode; phase?: number };
@@ -67,6 +68,8 @@ export function Shell({ children }: { children: ReactNode }) {
   const { me, siteId, setSiteId, signOut, savePreference } = useSession();
   const { choice } = useTheme();
   const path = usePath();
+  const guidePrefs = useGuidePrefs();
+  const toast = useToast();
   const [navOpen, setNavOpen] = useState(false);
   useEffect(() => { setNavOpen(false); }, [path]);
   if (!me) return null;
@@ -97,7 +100,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
-        <div className="sidebar-foot">{t("shell.version", { v: "0.7" })} · Comp11 Labs</div>
+        <div className="sidebar-foot">{t("shell.version", { v: "0.8" })} · Comp11 Labs</div>
       </aside>
       {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
 
@@ -140,13 +143,18 @@ export function Shell({ children }: { children: ReactNode }) {
                   </div>
                 </div>
                 <div className="menu-sep" />
+                {!u.is_platform_admin && <>
+                  {guidePrefs.hidden && <MenuItem icon={<LuListChecks />} onClick={() => { close(); guidePrefs.save({ checklist_hidden: false }); navigate("/"); }}>{t("gs.show")}</MenuItem>}
+                  <MenuItem icon={<LuCircleHelp />} onClick={() => { close(); guidePrefs.save({ tours_reset: true }); toast(t("gs.toursResetDone")); }}>{t("gs.toursReset")}</MenuItem>
+                  <div className="menu-sep" />
+                </>}
                 <MenuItem icon={<LuKeyRound />} onClick={() => { close(); navigate("/account/password"); }}>{t("user.changePassword")}</MenuItem>
                 <MenuItem icon={<LuLogOut />} onClick={() => { close(); signOut(); navigate("/", true); }}>{t("user.signOut")}</MenuItem>
               </>
             )}
           </Menu>
         </header>
-        <main className="content" id="main">{children}</main>
+        <main className="content" id="main"><TourProvider>{children}</TourProvider></main>
       </div>
     </div>
   );

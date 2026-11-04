@@ -9,6 +9,7 @@ export interface Me {
   user: {
     id: string; email: string; full_name: string; is_platform_admin: boolean; is_tenant_admin: boolean;
     language: Lang | null; theme: ThemeChoice; must_change_password: boolean;
+    guide?: { checklist_hidden?: boolean; tours?: string[] };
   };
   policy: Policy;
   tenant: null | {
