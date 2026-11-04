@@ -23,7 +23,7 @@ export interface ItemDetail extends ItemRow {
   description: string | null; grade: string | null; cleaning_group: string | null;
   lead_time_days: number | null; moq: number | null; safety_stock: number | null; qc_release_days: number | null;
   shelf_life_months: number | null; pack_size: number | null; units_per_shipper: number | null;
-  standard_cost: number | null; test_before_sale: boolean; not_stock_controlled?: boolean; release_lead_days: number | null;
+  standard_cost: number | null; assay_basis?: "as_is" | "dried"; test_before_sale: boolean; not_stock_controlled?: boolean; release_lead_days: number | null;
   conversions: { id: string; uom_id: string; uom: string; factor: number }[];
   markets: { id: string; market_id: string; market: string; currency: string; max_sellable_per_month: number | null; min_remaining_shelf_pct: number | null; active: boolean }[];
   prices: { id: string; market_id: string; market: string; price: number; currency: string; valid_from: string; valid_to: string | null; created_at: string; current: boolean }[];

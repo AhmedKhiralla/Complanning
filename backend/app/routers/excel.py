@@ -37,6 +37,7 @@ ITEM_COLUMNS = [
     ("Pack size", "pack_size", "pos", False), ("Units per shipper", "units_per_shipper", "int", False),
     ("Standard cost", "standard_cost", "num", False), ("Test before sale (yes/no)", "test_before_sale", "bool", False),
     ("Release lead time (days)", "release_lead_days", "num", False), ("Active (yes/no)", "active", "bool", False),
+    ("Assay basis (as is/dried)", "assay_basis", "assay_basis", False),
 ]
 MACHINE_COLUMNS = [
     ("Code", "code", "code", True), ("Name (English)", "name_en", "text", True), ("Name (Arabic)", "name_ar", "text", False),
@@ -112,7 +113,7 @@ def template(call: Call):
             "res_type": "One of: " + ", ".join(RES_TYPES.values()) + " (default Machine)",
             "uom": "A unit code from Master data → Units, for example KG, L, EA, TAB, BLS, CTN",
             "bool": "yes or no", "int": "Whole number", "num": "Number, 0 or more", "pos": "Number greater than 0",
-            "pct": "Number from 1 to 100", "text": "Text",
+            "pct": "Number from 1 to 100", "text": "Text", "assay_basis": "as is or dried",
         }[kind]
         guide.append([h, ("Required. " if req else "") + hint])
     guide.column_dimensions["A"].width = 30
@@ -157,6 +158,11 @@ def _parse(kind: str, raw, uoms: dict) -> tuple[object, str | None]:
                 if s in (k, name.lower()):
                     return k, None
             return None, "Unknown type."
+        if kind == "assay_basis":
+            s = str(raw).strip().lower().replace(" ", "_")
+            if s in ("as_is", "dried"):
+                return s, None
+            return None, "Use as is or dried."
         if kind == "uom":
             s = str(raw).strip().upper()
             if s not in uoms:
@@ -330,6 +336,8 @@ def export_master(call: Call):
                 v = TYPE_NAMES[v]
             elif kind == "bool":
                 v = "yes" if v else "no"
+            elif kind == "assay_basis":
+                v = "dried" if v == "dried" else "as is"
             elif isinstance(v, Decimal):
                 v = float(v)
             row.append(v)

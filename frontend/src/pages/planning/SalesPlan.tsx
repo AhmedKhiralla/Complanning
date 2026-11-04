@@ -7,6 +7,7 @@ import { ExcelMenu, NumberField } from "../../components/master";
 import { get, post, put, qs } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { usePerms } from "../../lib/session";
+import { useFeature } from "../../components/rules";
 
 interface Cell { id: string; quantity: number; due_date: string | null; notes: string | null; }
 interface Row {
@@ -50,6 +51,7 @@ export function SalesPlan() {
   const { t, lang, qty, month: fmtMonth, date } = useI18n();
   const { planSite, site, siteId, admin } = usePerms();
   const toast = useToast();
+  const feature = useFeature();
   const [start, setStart] = useState(thisMonth());
   const [count, setCount] = useState(6);
   const [market, setMarket] = useState("");
@@ -124,6 +126,7 @@ export function SalesPlan() {
             {t("sales.save")}{dirtyKeys.length ? ` (${dirtyKeys.length})` : ""}</Button>
         </>}
       </>} />
+      {!feature("sales_plan") && <Notice tone="warn">{t("sales.off")}</Notice>}
       {!canEdit && <Notice>{t("sales.readOnly")}</Notice>}
       {err && <Notice tone="danger">{err}</Notice>}
       <div className="panel">

@@ -12,7 +12,7 @@ export interface Me {
   };
   policy: Policy;
   tenant: null | {
-    id: string; code: string; name: string; country: string; timezone: string; default_language: Lang;
+    id: string; code: string; name: string; country: string; timezone: string; default_language: Lang; cost_currency?: string;
     features: Record<string, boolean>; terminology: Record<string, { en: string; ar: string }>;
   };
   sites: Site[];

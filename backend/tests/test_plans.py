@@ -98,7 +98,12 @@ def test_changeovers_and_verification(plan):
 
 def test_deliveries(plan):
     for d in plan["demand"]:
-        assert float(d["quantity"]) <= float(d["requested"])
+        if d["before_rounding"] is None:
+            assert float(d["quantity"]) <= float(d["requested"])
+        else:
+            # Rounded up to full shippers: a whole number of shippers, less than one shipper above the request.
+            ups = d["units_per_shipper"]
+            assert float(d["quantity"]) % ups == 0 and float(d["quantity"]) - float(d["before_rounding"]) < ups
         if d["on_time"]:
             assert d["available_at"] and ts(d["available_at"]).astimezone(CAIRO).date() <= dt.date.fromisoformat(d["due_date"])
 

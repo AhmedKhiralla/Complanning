@@ -29,6 +29,7 @@ export function ComparePlans() {
   if (error) return <>{back}<LoadError error={error} onRetry={() => window.location.reload()} /></>;
   if (!plans) return <>{back}<PageHead title={t("cmp.title")} /><div className="panel"><div className="panel-body"><div className="skeleton" style={{ height: 240 }} /></div></div></>;
   const tz = (id: string) => me?.sites.find((s) => s.id === id)?.timezone ?? "UTC";
+  const costCur = plans.find((p) => p.kpis?.cost)?.kpis?.cost?.currency ?? null;
   const currencies = Array.from(new Set(plans.flatMap((p) => (p.kpis?.value ?? []).map((v) => v.currency)))).sort();
 
   type Row = { label: string; values: (number | null)[]; show: (v: number | null, p: Full) => ReactNode; better: "high" | "low" | null };
@@ -47,6 +48,12 @@ export function ComparePlans() {
     { label: t("pv.kpi.finish"), values: plans.map((p) => (p.kpis?.finish ? Date.parse(p.kpis.finish) : null)), better: "low",
       show: (v, p) => v === null ? "—" : dateTime(new Date(v).toISOString(), tz(p.site_id)) },
     { label: t("cmp.warnings"), values: plans.map((p) => p.kpis?.warnings.length ?? null), better: "low", show: (v) => v ?? "—" },
+    ...(costCur ? [
+      { label: `${t("pv.kpi.margin")} (${costCur})`, better: "high" as const, show: (v: number | null) => v === null ? "—" : qty(v, 0),
+        values: plans.map((p) => (p.kpis?.cost?.currency === costCur ? p.kpis.cost.margin : null)) },
+      { label: `${t("pv.matCost")} (${costCur})`, better: "low" as const, show: (v: number | null) => v === null ? "—" : qty(v, 0),
+        values: plans.map((p) => (p.kpis?.cost?.currency === costCur ? p.kpis.cost.materials : null)) },
+    ] : []),
   ];
   const best = (r: Row) => {
     const vs = r.values.filter((v): v is number => v !== null);

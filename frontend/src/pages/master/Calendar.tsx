@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { LuCalendarPlus, LuChevronLeft, LuChevronRight, LuCopy, LuDownload, LuPlus, LuTrash2, LuX } from "react-icons/lu";
 import { Badge, Button, Confirm, LoadError, Notice, PageHead, TextField, errorText, fieldErrors, useLoad, useToast } from "../../components/ui";
 import { ReadOnlyNote } from "../../components/master";
+import { useFeature } from "../../components/rules";
 import { del, get, patch, post, put, qs } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { usePerms } from "../../lib/session";
@@ -98,6 +99,7 @@ export function CalendarPage() {
   const [removePeriod, setRemovePeriod] = useState<Period | null>(null);
   const [removeDay, setRemoveDay] = useState<Holiday | null>(null);
   const [importing, setImporting] = useState(false);
+  const feature = useFeature();
 
   const weekStartsSat = WEEK_SAT.includes(site?.country ?? "EG");
   const order = weekStartsSat ? [6, 7, 1, 2, 3, 4, 5] : [1, 2, 3, 4, 5, 6, 7];
@@ -223,12 +225,12 @@ export function CalendarPage() {
                 </div>
                 <span className="spacer" />
                 {canEdit && <>
-                  <Button size="sm" icon={<LuDownload />} busy={importing} onClick={async () => {
+                  {feature("holiday_import") && <Button size="sm" icon={<LuDownload />} busy={importing} onClick={async () => {
                     setImporting(true); setGeneral(null);
                     try { const d = await post<CalendarData>(`/api/sites/${siteId}/holidays/import`, { year }); cal.setData(d);
                       toast(d.imported?.added ? t("calendar.importDone", { n: d.imported.added }) : t("calendar.importNone")); }
                     catch (e) { fail(e); } finally { setImporting(false); }
-                  }}>{t("calendar.import")}</Button>
+                  }}>{t("calendar.import")}</Button>}
                   <Button size="sm" icon={<LuCalendarPlus />} onClick={() => setNewDay({ date: `${year}-01-01`, name: "" })}>{t("calendar.addDayOff")}</Button>
                 </>}
               </div>

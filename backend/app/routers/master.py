@@ -89,7 +89,7 @@ ITEM_COLS = ("code", "name_en", "name_ar", "type", "stock_uom_id", "dispensing_u
              "description", "grade", "dosage_form", "cleaning_group", "lead_time_days", "moq", "safety_stock",
              "qc_release_days", "shelf_life_months", "pack_size", "units_per_shipper", "standard_cost",
              "test_before_sale", "release_lead_days", "active", "hold_min_hours", "hold_max_hours", "release_at_risk_allowed",
-             "not_stock_controlled")
+             "not_stock_controlled", "assay_basis")
 
 ITEM_LIST_SQL = """
 SELECT i.id, i.code, i.name_en, i.name_ar, i.type, i.stock_uom_id, su.code AS stock_uom, i.dosage_form,
@@ -125,6 +125,7 @@ class ItemFields(BaseModel):
     hold_max_hours: Decimal | None = Field(default=None, gt=0, le=8760)
     release_at_risk_allowed: bool | None = None
     not_stock_controlled: bool | None = None
+    assay_basis: Literal["as_is", "dried"] | None = None
 
     @field_validator("name_ar", "description", "grade", "dosage_form", "cleaning_group", mode="before")
     @classmethod

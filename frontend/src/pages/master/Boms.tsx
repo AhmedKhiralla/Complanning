@@ -9,6 +9,7 @@ import { ApiError, del, get, patch, post, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { Link, navigate } from "../../lib/router";
 import { usePerms } from "../../lib/session";
+import { useFeature } from "../../components/rules";
 import { nameOf, type Bom, type BomLine, type BomListRow, type ExplodeNode, type ItemDetail, type ItemRow, type ItemType, type Uom } from "../../lib/types";
 
 const LEVELS: ItemType[] = ["finished", "semi_finished", "wip"];
@@ -173,6 +174,9 @@ export function BomEditor({ itemId }: { itemId: string }) {
   const { t, lang, qty, date } = useI18n();
   const toast = useToast();
   const { editCompany } = usePerms();
+  const feature = useFeature();
+  const showA = feature("assay_compensation"), showO = feature("overage"), showC = feature("compensating_material");
+  const ncol = 5 + (showA ? 1 : 0) + (showO ? 1 : 0) + (showC ? 1 : 0);
   const uoms = useUoms();
   const item = useLoad(() => get<ItemDetail>(`/api/items/${itemId}`), [itemId]);
   const versions = useLoad(() => get<{ items: BomListRow[] }>("/api/boms").then((d) => d.items.find((r) => r.id === itemId)?.versions ?? []), [itemId]);
@@ -349,10 +353,11 @@ export function BomEditor({ itemId }: { itemId: string }) {
               <table className="table bom-lines">
                 <thead><tr>
                   <th className="cell-tight">#</th><th>{t("boms.component")}</th><th className="num">{t("boms.qty")}</th><th>{t("boms.unit")}</th>
-                  <th className="center">{t("boms.assay")}</th><th className="num">{t("boms.overage")}</th><th className="center">{t("boms.compensating")}</th><th />
+                  {showA && <th className="center">{t("boms.assay")}</th>}{showO && <th className="num">{t("boms.overage")}</th>}
+                  {showC && <th className="center">{t("boms.compensating")}</th>}<th />
                 </tr></thead>
                 <tbody>
-                  {lines.length === 0 && <tr><td colSpan={8} className="subtle small">{t("boms.noLines")}</td></tr>}
+                  {lines.length === 0 && <tr><td colSpan={ncol} className="subtle small">{t("boms.noLines")}</td></tr>}
                   {lines.map((l, i) => {
                     const err = errs[`lines.${i}`];
                     return (
@@ -382,18 +387,18 @@ export function BomEditor({ itemId }: { itemId: string }) {
                             ? <select className="select" value={l.uom_id} aria-label={t("boms.unit")} onChange={(e) => setLine(l.key, { uom_id: e.target.value })}>
                                 {uomList.map((u) => <option key={u.id} value={u.id}>{u.code}</option>)}</select>
                             : <span className="mono-id">{l.uom}</span>}</td>
-                          <td className="center"><input type="checkbox" className="cb" checked={l.assay_compensated} disabled={!canEdit || l.is_compensating}
-                            aria-label={t("boms.assay")} onChange={(e) => setLine(l.key, { assay_compensated: e.target.checked })} /></td>
-                          <td className="num" style={{ width: 96 }}>{canEdit
+                          {showA && <td className="center"><input type="checkbox" className="cb" checked={l.assay_compensated} disabled={!canEdit || l.is_compensating}
+                            aria-label={t("boms.assay")} onChange={(e) => setLine(l.key, { assay_compensated: e.target.checked })} /></td>}
+                          {showO && <td className="num" style={{ width: 96 }}>{canEdit
                             ? <input className="input num" type="number" min="0" max="100" step="any" value={l.overage_pct} aria-label={t("boms.overage")} onChange={(e) => setLine(l.key, { overage_pct: e.target.value })} />
-                            : Number(l.overage_pct) > 0 ? `${qty(l.overage_pct, 2)}%` : <span className="subtle">—</span>}</td>
-                          <td className="center"><input type="radio" className="cb" name="compensating" checked={l.is_compensating} disabled={!canEdit}
+                            : Number(l.overage_pct) > 0 ? `${qty(l.overage_pct, 2)}%` : <span className="subtle">—</span>}</td>}
+                          {showC && <td className="center"><input type="radio" className="cb" name="compensating" checked={l.is_compensating} disabled={!canEdit}
                             aria-label={t("boms.compensating")} onChange={() => setLine(l.key, { is_compensating: true })}
-                            onClick={() => { if (l.is_compensating && canEdit) setLine(l.key, { is_compensating: false }); }} /></td>
+                            onClick={() => { if (l.is_compensating && canEdit) setLine(l.key, { is_compensating: false }); }} /></td>}
                           <td className="actions">{canEdit && <Button variant="ghost" size="sm" iconOnly aria-label={t("common.remove")} icon={<LuTrash2 />}
                             onClick={() => { setDirty(true); setLines(lines.filter((x) => x.key !== l.key)); }} />}</td>
                         </tr>
-                        {err && <tr className="row-error-msg"><td /><td colSpan={7} className="error small">{err}</td></tr>}
+                        {err && <tr className="row-error-msg"><td /><td colSpan={ncol - 1} className="error small">{err}</td></tr>}
                       </Fragment>
                     );
                   })}
@@ -414,10 +419,10 @@ export function BomEditor({ itemId }: { itemId: string }) {
                 : !tree.data ? <div className="panel-body"><div className="skeleton" style={{ width: "60%" }} /></div>
                   : <div className="tree"><Tree nodes={tree.data.children} /></div>}
             </section>
-            <section className="panel" aria-labelledby="lot-h">
+            {showA && <section className="panel" aria-labelledby="lot-h">
               <div className="panel-head"><LuCalculator aria-hidden className="muted" /><div><h2 id="lot-h">{t("boms.lotCheck")}</h2><p className="small muted">{t("boms.lotLead")}</p></div></div>
               <div className="panel-body">{uoms.data && <LotCheck key={b.updated_at} bom={b} uoms={uoms.data.items} />}</div>
-            </section>
+            </section>}
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
-  LuArchive, LuArchiveRestore, LuArrowLeft, LuSprayCan, LuLock, LuLockOpen, LuRefreshCw, LuSend, LuUndo2, LuChartGantt, LuCircleAlert, LuCircleCheck, LuEllipsis, LuFileSpreadsheet, LuPencil, LuTrash2, LuX,
+  LuArchive, LuArchiveRestore, LuArrowLeft, LuSprayCan, LuLock, LuLockOpen, LuRefreshCw, LuSend, LuUndo2, LuChartGantt, LuCircleAlert, LuCircleCheck, LuEllipsis, LuFileSpreadsheet, LuPencil, LuReceipt, LuTrash2, LuX,
 } from "react-icons/lu";
 import {
   Badge, Button, Confirm, Dialog, Empty, LoadError, Menu, MenuItem, Notice, TextField, errorText, useLoad, useToast,
@@ -19,7 +19,7 @@ interface PBatch {
   cleaning_group: string | null; uom: string; level: number; quantity: number; bom_version: number | null; need_by: string | null;
   start_at: string | null; end_at: string | null; available_at: string | null; ship_at: string | null;
   status: "scheduled" | "unscheduled"; problem: string | null; value: number | null; currency: string | null;
-  ordinal: number; locked: boolean;
+  ordinal: number; locked: boolean; expires_on: string | null; material_cost: number | null;
 }
 interface POp {
   id: string; batch_id: string; seq: number; step_name: string; resource_id: string; changeover_start: string | null;
@@ -30,7 +30,7 @@ interface POp {
 interface PDemand {
   id: string; item_id: string; code: string; name_en: string; name_ar: string | null; uom: string; market: string; month: string;
   due_date: string; requested: number; quantity: number; from_stock: number; batches: string | null; available_at: string | null;
-  late_hours: number | null; on_time: boolean;
+  late_hours: number | null; on_time: boolean; before_rounding: number | null; units_per_shipper: number | null; pack_size: number | null;
 }
 interface PlanFull extends PlanRow {
   batches: PBatch[]; operations: POp[]; links: { supplier_id: string; consumer_id: string; quantity: number }[];
@@ -272,7 +272,7 @@ function Gantt({ plan, tz, selected, onSelect, editable, onMove }: {
 function BatchDetail({ plan, id, tz, onSelect, editable, onLock }: {
   plan: PlanFull; id: string; tz: string; onSelect: (id: string | null) => void; editable: boolean; onLock: (id: string, locked: boolean) => void;
 }) {
-  const { t, lang, qty, dateTime } = useI18n();
+  const { t, lang, qty, dateTime, date } = useI18n();
   const dur = useDuration();
   const b = plan.batches.find((x) => x.id === id);
   if (!b) return null;
@@ -305,6 +305,9 @@ function BatchDetail({ plan, id, tz, onSelect, editable, onLock }: {
           <div><span>{t("pv.start")}</span><strong>{dateTime(b.start_at, tz)}</strong></div>
           <div><span>{t("pv.end")}</span><strong>{dateTime(b.end_at, tz)}</strong></div>
           <div><span>{b.type === "finished" ? t("pv.ship") : t("pv.available")}</span><strong>{dateTime(b.type === "finished" ? b.ship_at : b.available_at, tz)}</strong></div>
+          {b.expires_on && <div><span>{t("pv.expires")}</span><strong>{date(b.expires_on, "UTC")}</strong></div>}
+          {b.material_cost !== null && b.material_cost !== undefined && <div><span>{t("pv.matCost")}</span>
+            <strong>{qty(b.material_cost, 0)} {plan.kpis?.cost?.currency ?? ""}</strong></div>}
         </div>
         <table className="table compact">
           <thead><tr><th>{t("pv.step")}</th><th>{t("pv.machine")}</th><th>{t("pv.changeover")}</th><th>{t("pv.start")}</th><th>{t("pv.end")}</th></tr></thead>
@@ -345,6 +348,11 @@ function warnText(w: Warning, t: ReturnType<typeof useI18n>["t"], qty: ReturnTyp
     case "lock_no_changeover": return t("pv.w.lock_no_changeover", { code: String(w.code), machine: String(w.machine), minutes: n(w.minutes) });
     case "lock_inputs_late": return t("pv.w.lock_inputs_late", { code: String(w.code), input: String(w.input), hours: n(w.hours) });
     case "lock_lost": return t("pv.w.lock_lost", { code: String(w.code) });
+    case "short_shelf_life": return t("pv.w.short_shelf_life", { code: String(w.code), market: String(w.market), qty: `${n(w.quantity)} ${w.uom ?? ""}` });
+    case "shelf_life_short": return t("pv.w.shelf_life_short", { code: String(w.code), market: String(w.market), min: n(w.min), expires: String(w.expires) });
+    case "campaign_short": return t("pv.w.campaign_short", { code: String(w.code), machine: String(w.machine), n: String(w.batches), min: String(w.min) });
+    case "compensation_negative": return t("pv.w.compensation_negative", { code: String(w.code), item: String(w.item) });
+    case "compensation_unit": return t("pv.w.compensation_unit", { code: String(w.code), item: String(w.item) });
     default: return w.kind;
   }
 }
@@ -442,6 +450,9 @@ export function PlanView({ planId }: { planId: string }) {
           <div className="money">{k.value.length ? k.value.map((v) => <strong key={v.currency}>{qty(v.on_time, 0)} <small>{v.currency} {t("pv.kpi.valueOf", { v: qty(v.requested, 0) })}</small></strong>) : <strong>—</strong>}</div></div>
         <div className="kpi"><span className="icon">{OBJ_ICON.on_time}</span><span className="k">{t("pv.kpi.finish")}</span>
           <strong className="date-kpi">{k.finish ? dateTime(k.finish, tz) : "—"}</strong></div>
+        {k.cost && <div className="kpi"><span className="icon"><LuReceipt /></span><span className="k">{t("pv.kpi.margin")}</span>
+          <div className="money"><strong>{qty(k.cost.margin, 0)} <small>{k.cost.currency}</small></strong></div>
+          <span className="small subtle">{t("pv.kpi.costSub", { m: qty(k.cost.materials, 0), d: qty(k.cost.deliveries, 0), cur: k.cost.currency })}</span></div>}
       </div>
 
       <div className="tabs" role="tablist" style={{ marginTop: 20 }}>
@@ -470,7 +481,9 @@ export function PlanView({ planId }: { planId: string }) {
             <td><Badge tone="brand">{d.market}</Badge></td>
             <td className="small num">{date(d.due_date, "UTC")}</td>
             <td className="num">{qty(d.quantity, 0)} <span className="subtle small">{d.uom}</span>
-              {Number(d.quantity) < Number(d.requested) && <div className="small text-warn">{qty(d.requested, 0)} · {t("pv.capped")}</div>}</td>
+              {d.before_rounding !== null ? <div className="small subtle">{t("pv.rounded", { q: qty(d.before_rounding, 0) })}</div>
+                : Number(d.quantity) < Number(d.requested) && <div className="small text-warn">{qty(d.requested, 0)} · {t("pv.capped")}</div>}
+              {d.units_per_shipper ? <div className="small subtle">{t("pv.shippers", { n: qty(Number(d.quantity) / Number(d.units_per_shipper), 1) })}</div> : null}</td>
             <td className="num">{Number(d.from_stock) > 0 ? qty(d.from_stock, 0) : <span className="subtle">—</span>}</td>
             <td className="small mono-id">{d.batches ?? "—"}</td>
             <td className="small num">{d.available_at ? dateTime(d.available_at, tz) : "—"}</td>

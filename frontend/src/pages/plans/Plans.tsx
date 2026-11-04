@@ -16,7 +16,8 @@ export interface PlanRow {
   kpis: null | {
     batches: number; scheduled: number; unscheduled: number; demand_lines: number; on_time: number; late: number; unfilled: number;
     on_time_pct: number | null; changeover_hours: number; changeovers: number; finish: string | null; runtime_ms: number; runs: number;
-    value: { currency: string; requested: number; on_time: number }[]; warnings: Warning[];
+    value: { currency: string; requested: number; on_time: number }[]; warnings: Warning[]; rounded?: number;
+    cost?: { currency: string; materials: number; deliveries: number; margin: number; missing: string[] } | null;
     utilization: { machine_id: string; code: string; available_hours: number; busy_hours: number; changeover_hours: number; utilization: number | null }[];
   };
 }
@@ -44,7 +45,7 @@ function NewPlanSheet({ siteId, onClose }: { siteId: string; onClose: () => void
   const [preset, setPreset] = useState<Preset>("next30");
   const [custom, setCustom] = useState<[string, string]>(presetRange("next30"));
   const [f, setF] = useState({ name: "", objective: "on_time" as Objective, include_quarantine: false, release_at_risk: false,
-    cap_to_limit: true, material_constraints: true, max_early_days: "14", notes: "" });
+    cap_to_limit: true, material_constraints: true, full_shippers: true, max_early_days: "14", notes: "" });
   const [busy, setBusy] = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [general, setGeneral] = useState<string | null>(null);
@@ -56,7 +57,7 @@ function NewPlanSheet({ siteId, onClose }: { siteId: string; onClose: () => void
     try {
       const p = await post<PlanRow>(`/api/sites/${siteId}/plans`, {
         name: f.name.trim() || `${t(`obj.${f.objective}` as never)} · ${date(start, "UTC")} – ${date(end, "UTC")}`, objective: f.objective, horizon_start: start, horizon_end: end, include_quarantine: f.include_quarantine,
-        release_at_risk: f.release_at_risk, cap_to_limit: f.cap_to_limit, material_constraints: f.material_constraints,
+        release_at_risk: f.release_at_risk, cap_to_limit: f.cap_to_limit, material_constraints: f.material_constraints, full_shippers: f.full_shippers,
         max_early_days: f.max_early_days.trim() === "" ? null : Number(f.max_early_days), notes: f.notes || null,
       });
       toast(t("np.done")); navigate(`/plans/${p.id}`);
@@ -64,7 +65,7 @@ function NewPlanSheet({ siteId, onClose }: { siteId: string; onClose: () => void
       setErrs((e as { fields?: Record<string, string> }).fields ?? {}); setGeneral(errorText(e, t)); setBusy(false);
     }
   };
-  const opt = (key: "include_quarantine" | "release_at_risk" | "cap_to_limit" | "material_constraints", label: string, hint: string) => (
+  const opt = (key: "include_quarantine" | "release_at_risk" | "cap_to_limit" | "material_constraints" | "full_shippers", label: string, hint: string) => (
     <div className="feature" style={{ padding: "8px 0", border: 0 }}>
       <div className="text"><strong>{t(label as never)}</strong><span>{t(hint as never)}</span></div>
       <Switch label={t(label as never)} checked={f[key]} onChange={(v) => setF({ ...f, [key]: v })} />
@@ -107,6 +108,7 @@ function NewPlanSheet({ siteId, onClose }: { siteId: string; onClose: () => void
       {opt("include_quarantine", "np.quarantine", "np.quarantineHint")}
       {feature("release_at_risk") && opt("release_at_risk", "np.atRisk", "np.atRiskHint")}
       {opt("cap_to_limit", "np.cap", "np.capHint")}
+      {opt("full_shippers", "np.shippers", "np.shippersHint")}
       <TextField label={t("np.notes")} value={f.notes} maxLength={500} onChange={(v) => setF({ ...f, notes: v })} />
     </Sheet>
   );

@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from ..defaults import effective_features
 from ..api import ApiError, Call, endpoint, not_found
 from ..holidays_builtin import builtin_holidays
 from ..perms import require_site
@@ -489,6 +490,9 @@ def import_holidays(call: Call):
     """Add national holidays as proposals (unconfirmed) that the planner confirms one by one."""
     sid = call.path["site_id"]
     site = require_site(call, sid, edit=True)
+    feats = effective_features(call.tx.val("SELECT features FROM tenants WHERE id = %s", call.tenant_id))
+    if not feats.get("holiday_import", True):
+        raise ApiError(409, "feature_off", "Holiday import is switched off in Settings. Add the days off by hand.")
     year = call.body.year
     country = site["country"].strip().upper()
     source = "service"

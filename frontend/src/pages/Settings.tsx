@@ -10,7 +10,7 @@ import { useSession, type Policy } from "../lib/session";
 import type { StringKey } from "../lib/strings";
 
 interface SettingsData {
-  company: { id: string; code: string; name: string; country: string; timezone: string; default_language: "en" | "ar" };
+  company: { id: string; code: string; name: string; country: string; timezone: string; default_language: "en" | "ar"; cost_currency: string };
   features: Record<string, boolean>;
   feature_groups: Record<string, string>;
   presets: { pharma: Record<string, boolean>; general: Record<string, boolean> };
@@ -46,7 +46,7 @@ function CompanyTab({ data, onSaved }: { data: SettingsData; onSaved: (d: Settin
   const countries = useMemo(() => COUNTRIES.map((c) => ({ value: c, label: countryName(c) })).sort((a, b) => a.label.localeCompare(b.label)), [countryName]);
   const zones = useMemo(() => timeZones().map((z) => ({ value: z, label: z.replace(/_/g, " ") })), []);
   return (
-    <form className="panel" onSubmit={(e) => { e.preventDefault(); s.run(() => patch("/api/settings/company", { name: f.name, country: f.country, timezone: f.timezone, default_language: f.default_language })); }}>
+    <form className="panel" onSubmit={(e) => { e.preventDefault(); s.run(() => patch("/api/settings/company", { name: f.name, country: f.country, timezone: f.timezone, default_language: f.default_language, cost_currency: f.cost_currency })); }}>
       <div className="panel-head"><p className="muted">{t("settings.companyLead")}</p></div>
       <div className="panel-body stack" style={{ maxWidth: 640 }}>
         {s.general && <Notice tone="danger">{s.general}</Notice>}
@@ -61,6 +61,9 @@ function CompanyTab({ data, onSaved }: { data: SettingsData; onSaved: (d: Settin
         <div className="grid-2">
           <SelectField label={t("settings.defaultLanguage")} value={f.default_language} onChange={(v) => setF({ ...f, default_language: v as "en" | "ar" })}
             options={[{ value: "en", label: "English" }, { value: "ar", label: "العربية" }]} />
+          {data.features.costs && <TextField label={t("settings.costCurrency")} value={f.cost_currency} dir="ltr" maxLength={3}
+            hint={t("settings.costCurrencyHint")} error={s.errs.cost_currency}
+            onChange={(v) => setF({ ...f, cost_currency: v.toUpperCase().replace(/[^A-Z]/g, "") })} />}
         </div>
         <div><Button type="submit" variant="primary" busy={s.busy}>{t("common.save")}</Button></div>
       </div>

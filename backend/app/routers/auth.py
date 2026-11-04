@@ -116,11 +116,11 @@ def me_payload(call: Call) -> dict:
         "sites": [],
     }
     if u["tenant_id"]:
-        t = tx.one("SELECT id, code, name, country, timezone, default_language, features, terminology"
+        t = tx.one("SELECT id, code, name, country, timezone, default_language, features, terminology, cost_currency"
                    " FROM tenants WHERE id = %s", u["tenant_id"])
         data["tenant"] = {
             "id": t["id"], "code": t["code"], "name": t["name"], "country": t["country"],
-            "timezone": t["timezone"], "default_language": t["default_language"],
+            "timezone": t["timezone"], "default_language": t["default_language"], "cost_currency": t["cost_currency"],
             "features": effective_features(t["features"]),
             "terminology": effective_terms(t["terminology"]),
         }

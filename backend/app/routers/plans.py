@@ -10,7 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from ..api import ApiError, Call, endpoint, not_found
-from ..engine.planner import ENGINE_VERSION, as_utc, build_plan, solve, summarise
+from ..engine.planner import ENGINE_VERSION, as_utc, batch_expiry, build_plan, solve, summarise
 from ..perms import require_plan
 from .demand import _features, _today
 from .excel import _autosize, _style_header, _wb, _xlsx
@@ -33,6 +33,7 @@ class PlanIn(BaseModel):
     cap_to_limit: bool = True
     material_constraints: bool = True
     max_early_days: int | None = Field(default=14, ge=0, le=180)
+    full_shippers: bool = True
     notes: str | None = Field(default=None, max_length=500)
 
 
@@ -83,7 +84,8 @@ def create_plan(call: Call):
     if end < today:
         raise ApiError(422, "invalid", "Some fields need attention.", fields={"horizon_end": "The horizon has already passed."})
     options = {"include_quarantine": b.include_quarantine, "release_at_risk": b.release_at_risk, "cap_to_limit": b.cap_to_limit,
-               "material_constraints": b.material_constraints, "max_early_days": b.max_early_days}
+               "material_constraints": b.material_constraints, "max_early_days": b.max_early_days,
+               "full_shippers": b.full_shippers}
     model, sched, kpis = _run(call, site, start, end, b.objective, options, today, [])
     labels = {"on_time": "On-time delivery", "sales_value": "Sales value", "utilization": "Utilisation"}
     name = (b.name or "").strip() or f"{labels[b.objective]} · {start:%d %b} – {end:%d %b %Y}"
@@ -115,12 +117,13 @@ def _store(call: Call, pid, model, sched) -> dict:
         numbers[bt.key] = f"B{n:03d}"
         row = call.tx.one(
             "INSERT INTO plan_batches (tenant_id, plan_id, batch_no, item_id, level, quantity, bom_version, need_by, start_at, end_at,"
-            " available_at, ship_at, status, problem, value, currency, ordinal, locked)"
-            " VALUES (%s, %s, %s, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            " available_at, ship_at, status, problem, value, currency, ordinal, locked, expires_on, material_cost)"
+            " VALUES (%s, %s, %s, %s::uuid, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             call.tenant_id, pid, numbers[bt.key], bt.item_id, bt.level, round(bt.qty, 3), bt.bom_version, as_utc(bt.need_by),
             as_utc(dn["start"]) if dn else None, as_utc(dn["end"]) if dn else None, as_utc(dn["available"]) if dn else None,
             as_utc(dn["ship"]) if dn else None, "scheduled" if dn else "unscheduled", sched.failed.get(bt.key),
-            round(bt.value, 2) if bt.value else None, bt.currency, bt.ordinal, bool(bt.lock and dn))
+            round(bt.value, 2) if bt.value else None, bt.currency, bt.ordinal, bool(bt.lock and dn), batch_expiry(sched, bt),
+            round(bt.material_cost, 2) if bt.material_cost is not None else None)
         ids[bt.key] = row["id"]
         keys[(bt.item_id, bt.ordinal)] = str(row["id"])
     for o in sorted(sched.ops, key=lambda o: o.start):
@@ -139,11 +142,12 @@ def _store(call: Call, pid, model, sched) -> dict:
         d = x["row"]
         call.tx.x(
             "INSERT INTO plan_demand (tenant_id, plan_id, demand_line_id, item_id, market_id, month, due_date, requested, quantity,"
-            " from_stock, batches, available_at, late_hours, on_time, price, currency)"
-            " VALUES (%s, %s, %s::uuid, %s::uuid, %s::uuid, %s, %s, %s, %s, %s, string_to_array(%s, ','), %s, %s, %s, %s, %s)",
+            " from_stock, batches, available_at, late_hours, on_time, price, currency, before_rounding)"
+            " VALUES (%s, %s, %s::uuid, %s::uuid, %s::uuid, %s, %s, %s, %s, %s, string_to_array(%s, ','), %s, %s, %s, %s, %s, %s)",
             call.tenant_id, pid, d.line_id, d.item_id, d.market_id, d.month, d.due_date, round(d.requested, 3), round(d.quantity, 3),
             round(d.from_stock, 3), ",".join(numbers[b.key] for b, _ in d.sources) or None, as_utc(x["available"]),
-            round(x["late_hours"], 1) if x["late_hours"] is not None else None, bool(x["on_time"]), d.price, d.currency)
+            round(x["late_hours"], 1) if x["late_hours"] is not None else None, bool(x["on_time"]), d.price, d.currency,
+            round(d.before_rounding, 3) if d.before_rounding is not None else None)
     return keys
 
 
@@ -161,7 +165,7 @@ def get_plan(call: Call):
     p["batches"] = call.tx.q(
         "SELECT b.id, b.batch_no, b.item_id, i.code, i.name_en, i.name_ar, i.type, i.cleaning_group, u.code AS uom, b.level, b.quantity,"
         " b.bom_version, b.need_by, b.start_at, b.end_at, b.available_at, b.ship_at, b.status, b.problem, b.value, b.currency,"
-        " b.ordinal, b.locked"
+        " b.ordinal, b.locked, b.expires_on, b.material_cost"
         "  FROM plan_batches b JOIN items i ON i.id = b.item_id JOIN uoms u ON u.id = i.stock_uom_id"
         " WHERE b.plan_id = %s ORDER BY b.batch_no", pid)
     p["operations"] = call.tx.q(
@@ -171,7 +175,8 @@ def get_plan(call: Call):
     p["links"] = call.tx.q("SELECT supplier_id, consumer_id, quantity FROM plan_links WHERE plan_id = %s", pid)
     p["demand"] = call.tx.q(
         "SELECT d.id, d.item_id, i.code, i.name_en, i.name_ar, u.code AS uom, d.market_id, m.code AS market, d.month, d.due_date,"
-        " d.requested, d.quantity, d.from_stock, array_to_string(d.batches, ', ') AS batches, d.available_at, d.late_hours, d.on_time, d.price, d.currency"
+        " d.requested, d.quantity, d.from_stock, array_to_string(d.batches, ', ') AS batches, d.available_at, d.late_hours, d.on_time, d.price, d.currency,"
+        " d.before_rounding, i.units_per_shipper, i.pack_size"
         "  FROM plan_demand d JOIN items i ON i.id = d.item_id JOIN uoms u ON u.id = i.stock_uom_id JOIN markets m ON m.id = d.market_id"
         " WHERE d.plan_id = %s ORDER BY d.due_date, i.code, m.code", pid)
     eligible: dict[tuple, list] = {}
@@ -339,15 +344,22 @@ def export_plan(call: Call):
                 ("Times shown in", tz), ("Batches", k.get("batches")), ("On-time deliveries", f"{k.get('on_time')} of {k.get('demand_lines')}"),
                 ("Changeover hours", k.get("changeover_hours")), ("Created by", p["created_by_name"]), ("Engine", k.get("engine"))):
         ws.append(list(row))
+    if k.get("cost"):
+        c = k["cost"]
+        for row in ((f"Material cost ({c['currency']})", c["materials"]), (f"Standard cost of deliveries ({c['currency']})", c["deliveries"]),
+                    (f"Standard margin ({c['currency']})", c["margin"])):
+            ws.append(list(row))
     ws.column_dimensions["A"].width = 22
     ws.column_dimensions["B"].width = 60
 
     ws = wb.create_sheet("Batches")
-    ws.append(["Batch", "Item", "Name", "Quantity", "Unit", "Start", "End", "Available", "Ship from", "Status", "Problem"])
+    ws.append(["Batch", "Item", "Name", "Quantity", "Unit", "Start", "End", "Available", "Ship from", "Expiry", "Material cost",
+               "Status", "Problem"])
     for b in call.tx.q("SELECT b.*, i.code, i.name_en, u.code AS uom FROM plan_batches b JOIN items i ON i.id = b.item_id"
                        " JOIN uoms u ON u.id = i.stock_uom_id WHERE b.plan_id = %s ORDER BY b.batch_no", p["id"]):
         ws.append([b["batch_no"], b["code"], b["name_en"], float(b["quantity"]), b["uom"], local(b["start_at"]), local(b["end_at"]),
-                   local(b["available_at"]), local(b["ship_at"]), b["status"], b["problem"]])
+                   local(b["available_at"]), local(b["ship_at"]), b["expires_on"],
+                   float(b["material_cost"]) if b["material_cost"] is not None else None, b["status"], b["problem"]])
     _style_header(ws); _autosize(ws)
 
     ws = wb.create_sheet("Machine schedule")
@@ -361,10 +373,15 @@ def export_plan(call: Call):
     _style_header(ws); _autosize(ws)
 
     ws = wb.create_sheet("Deliveries")
-    ws.append(["Product", "Market", "Due", "Requested", "Planned", "From stock", "Batches", "Available", "On time", "Late (h)"])
-    for d in call.tx.q("SELECT d.*, array_to_string(d.batches, ', ') AS batch_list, i.code, m.code AS market FROM plan_demand d JOIN items i ON i.id = d.item_id"
+    ws.append(["Product", "Market", "Due", "Requested", "Planned", "Shippers", "Units", "From stock", "Batches", "Available",
+               "On time", "Late (h)"])
+    for d in call.tx.q("SELECT d.*, array_to_string(d.batches, ', ') AS batch_list, i.code, i.units_per_shipper, i.pack_size,"
+                       " m.code AS market FROM plan_demand d JOIN items i ON i.id = d.item_id"
                        " JOIN markets m ON m.id = d.market_id WHERE d.plan_id = %s ORDER BY d.due_date, i.code", p["id"]):
-        ws.append([d["code"], d["market"], d["due_date"], float(d["requested"]), float(d["quantity"]), float(d["from_stock"]),
+        ups, pack = d["units_per_shipper"], d["pack_size"]
+        ws.append([d["code"], d["market"], d["due_date"], float(d["requested"]), float(d["quantity"]),
+                   round(float(d["quantity"]) / ups, 2) if ups else None, float(d["quantity"] * pack) if pack else None,
+                   float(d["from_stock"]),
                    d["batch_list"], local(d["available_at"]), "yes" if d["on_time"] else "no",
                    float(d["late_hours"]) if d["late_hours"] is not None else None])
     _style_header(ws); _autosize(ws)

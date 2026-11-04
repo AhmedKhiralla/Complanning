@@ -9,14 +9,14 @@ import { get, patch, post, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { navigate } from "../../lib/router";
 import { usePerms, useSession } from "../../lib/session";
-import type { CleaningGroup } from "../../components/rules";
+import { useFeature, type CleaningGroup } from "../../components/rules";
 import { ITEM_TYPES, PRODUCIBLE, nameOf, type ItemDetail, type ItemRow, type ItemType, type Uom } from "../../lib/types";
 
 type Tab = "general" | "planning" | "units" | "markets" | "usage";
 
 const FIELDS = ["name_en", "name_ar", "stock_uom_id", "dispensing_uom_id", "density_kg_per_l", "description", "grade",
   "dosage_form", "cleaning_group", "lead_time_days", "moq", "safety_stock", "qc_release_days", "shelf_life_months",
-  "pack_size", "units_per_shipper", "standard_cost", "release_lead_days"] as const;
+  "pack_size", "units_per_shipper", "standard_cost", "release_lead_days", "assay_basis"] as const;
 const NUMERIC = new Set(["density_kg_per_l", "lead_time_days", "moq", "safety_stock", "qc_release_days", "shelf_life_months",
   "pack_size", "units_per_shipper", "standard_cost", "release_lead_days"]);
 
@@ -217,11 +217,16 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
   const uomOptions = [{ value: "", label: "—" }, ...uoms.filter((u) => u.active).map((u) => ({ value: u.id, label: `${u.code} · ${nameOf(u, lang)}` }))];
   const stockCode = uoms.find((u) => u.id === f.stock_uom_id)?.code ?? "";
   const producible = PRODUCIBLE.includes(type);
+  const feature = useFeature();
+  const { me } = useSession();
+  const costsOn = feature("costs");
+  const costCurrency = me?.tenant?.cost_currency ?? "";
 
   const save = async () => {
     setBusy(true); setErrs({}); setGeneral(null);
     const body: Record<string, unknown> = { ...flags };
     FIELDS.forEach((k) => { const v = f[k] ?? ""; body[k] = NUMERIC.has(k) ? numOrNull(v) : v.trim() === "" ? null : v.trim(); });
+    body.assay_basis = f.assay_basis || "as_is";
     try {
       if (isNew) {
         const d = await post<ItemDetail>("/api/items", { ...body, code, type });
@@ -292,18 +297,24 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
               <Switch label={t("items.f.notStock")} checked={flags.not_stock_controlled} disabled={ro} onChange={(v) => setFlags({ ...flags, not_stock_controlled: v })} />
             </div>}
             <div className="grid-2">
-              {!producible && <NumberField label={t("items.f.moq")} value={f.moq ?? ""} onChange={set("moq")} disabled={ro} min={0} suffix={stockCode} />}
+              {!producible && <NumberField label={t("items.f.moq")} hint={t("items.f.moqHint")} value={f.moq ?? ""} onChange={set("moq")} disabled={ro} min={0} suffix={stockCode} />}
               <NumberField label={t("items.f.safety")} value={f.safety_stock ?? ""} onChange={set("safety_stock")} disabled={ro} min={0} suffix={stockCode} />
               {producible && <NumberField label={t("items.f.releaseLead")} value={f.release_lead_days ?? ""} onChange={set("release_lead_days")} disabled={ro} min={0} />}
             </div>
-            {(type === "finished" || type === "semi_finished") && <div className="grid-2">
-              <NumberField label={t("items.f.shelfLife")} value={f.shelf_life_months ?? ""} onChange={set("shelf_life_months")} disabled={ro} min={1} step="1" />
-              {type === "finished" && <NumberField label={t("items.f.stdCost")} value={f.standard_cost ?? ""} onChange={set("standard_cost")} disabled={ro} min={0} />}
+            {(type === "finished" || type === "semi_finished" || costsOn) && <div className="grid-2">
+              {(type === "finished" || type === "semi_finished") && <NumberField label={t("items.f.shelfLife")} hint={t("items.f.shelfLifeHint")}
+                value={f.shelf_life_months ?? ""} onChange={set("shelf_life_months")} disabled={ro} min={1} step="1" />}
+              {costsOn && <NumberField label={t("items.f.stdCost")} hint={t("items.f.stdCostHint", { cur: costCurrency, uom: stockCode })}
+                value={f.standard_cost ?? ""} onChange={set("standard_cost")} disabled={ro} min={0} />}
+            </div>}
+            {type === "raw_material" && feature("assay_compensation") && <div className="grid-2">
+              <SelectField label={t("items.f.assayBasis")} hint={t("items.f.assayBasisHint")} value={f.assay_basis || "as_is"} onChange={set("assay_basis")} disabled={ro}
+                options={[{ value: "as_is", label: t("items.f.assayAsIs") }, { value: "dried", label: t("items.f.assayDried") }]} />
             </div>}
             {type === "finished" && <>
               <div className="grid-2">
-                <NumberField label={t("items.f.packSize")} value={f.pack_size ?? ""} onChange={set("pack_size")} disabled={ro} min={0} />
-                <NumberField label={t("items.f.perShipper")} value={f.units_per_shipper ?? ""} onChange={set("units_per_shipper")} disabled={ro} min={1} step="1" />
+                <NumberField label={t("items.f.packSize")} hint={t("items.f.packSizeHint", { uom: stockCode })} value={f.pack_size ?? ""} onChange={set("pack_size")} disabled={ro} min={0} />
+                <NumberField label={t("items.f.perShipper")} hint={t("items.f.perShipperHint", { uom: stockCode })} value={f.units_per_shipper ?? ""} onChange={set("units_per_shipper")} disabled={ro} min={1} step="1" />
               </div>
               <div className="feature" style={{ padding: "4px 0", border: 0 }}>
                 <div className="text"><strong>{t("items.f.testBeforeSale")}</strong><span>{t("items.f.testBeforeSaleHint")}</span></div>

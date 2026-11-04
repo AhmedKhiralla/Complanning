@@ -88,7 +88,10 @@ def test_net_requirements(co):
     assert p["WIP-PCM-BLEND"]["batches"] == 3
     mats = {x["code"]: x for x in r["materials"]}
     api = mats["RM-PCM"]
-    assert round(float(api["required"])) == 750 and round(float(api["shortage"])) == 150
+    # 750 kg in the formula, raised by the potency of the stock: assay 99.6 % on the dried substance, LOD 0.3 %.
+    assert abs(float(api["required"]) - 750 * 100 / 99.6 * 100 / 99.7) < 0.01 and round(float(api["shortage"])) == 155
+    # Suggested order: shortage plus safety stock (800 kg), at least the minimum order (500 kg).
+    assert round(float(api["order_qty"])) == 955
     assert api["quarantine_would_cover"] and api["late"]           # 120 days lead time
     assert mats["RM-PW"]["not_stock_controlled"] and float(mats["RM-PW"]["shortage"]) == 0
     assert "PM-ALU-250" in mats and float(mats["PM-ALU-250"]["released"]) == 250   # rejected lot not counted

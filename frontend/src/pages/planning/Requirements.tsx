@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { LuBoxes, LuCalendarRange, LuCircleCheck, LuClockAlert, LuFactory, LuPackageX, LuWallet } from "react-icons/lu";
+import { LuBoxes, LuCalendarRange, LuCircleCheck, LuClockAlert, LuFactory, LuPackageX, LuReceipt, LuWallet } from "react-icons/lu";
 import { Badge, Empty, LoadError, Notice, PageHead, Switch, useLoad } from "../../components/ui";
 import { TypeBadge } from "../../components/master";
 import { get, qs } from "../../lib/api";
@@ -13,16 +13,20 @@ interface Produced {
   demand: number; dependent: number; safety: number; released: number; quarantine: number; stock_counted: boolean; usable: number;
   stock_used: number; net: number; used_by: UsedBy[]; batches: number; batch_sizes: number[]; batch_output: number | null;
   batch_mode: "fixed" | "partial" | null; planned: number; surplus: number; bom_version: number | null; no_bom: boolean;
+  expired?: number; short_dated?: number;
 }
 interface Material {
   item_id: string; code: string; name_en: string; name_ar: string | null; type: ItemType; uom: string; required: number;
   released: number; quarantine: number; available: number; shortage: number; after: number; safety: number; below_safety: boolean;
   not_stock_controlled: boolean; lead_time_days: number; qc_release_days: number; earliest_arrival: string | null; late: boolean;
-  used_by: UsedBy[]; quarantine_would_cover: boolean;
+  used_by: UsedBy[]; quarantine_would_cover: boolean; potency?: number | null; moq?: number | null; order_qty?: number;
+  unit_cost?: number | null; order_value?: number | null; expired?: number;
 }
 interface Result {
   horizon: { start: string; end: string; days: number };
-  options: { include_quarantine: boolean; use_stock: Record<string, boolean> };
+  options: { include_quarantine: boolean; use_stock: Record<string, boolean>; sales_plan?: boolean; assay_compensation?: boolean };
+  problems?: { kind: string; code: string; item?: string }[];
+  cost?: { currency: string; materials: number; orders: number; missing: string[] } | null;
   produced: Produced[]; materials: Material[];
   over_limit: { code: string; market: string; month: string; quantity: number; limit: number }[];
   sales_value: { currency: string; value: number }[];
@@ -106,12 +110,19 @@ export function Requirements() {
           <div className={`kpi ${r.totals.late ? "bad" : "good"}`}><span className="icon"><LuClockAlert /></span><span className="k">{t("req.kpi.late")}</span><strong>{qty(r.totals.late)}</strong></div>
           <div className="kpi"><span className="icon"><LuWallet /></span><span className="k">{t("req.kpi.value")}</span>
             <div className="money">{r.sales_value.length ? r.sales_value.map((v) => <strong key={v.currency}>{qty(v.value, 0)} <small>{v.currency}</small></strong>) : <strong>—</strong>}</div></div>
+          {r.cost && <div className="kpi"><span className="icon"><LuReceipt /></span><span className="k">{t("req.kpi.matCost")}</span>
+            <div className="money"><strong>{qty(r.cost.materials, 0)} <small>{r.cost.currency}</small></strong></div>
+            <span className="small subtle">{t("req.kpi.orders", { v: qty(r.cost.orders, 0), cur: r.cost.currency })}</span></div>}
         </div>
         {r.over_limit.length > 0 && <Notice tone="warn">
           {t("req.overLimit", { n: r.over_limit.length })}{" "}
           <span className="small">{r.over_limit.map((o) => `${o.code} / ${o.market} / ${o.month}: ${qty(o.quantity, 0)} > ${qty(o.limit, 0)}`).join(" · ")}</span>
         </Notice>}
         {noBom.length > 0 && <Notice tone="danger">{t("req.noBom", { codes: noBom.join(", ") })}</Notice>}
+        {r.options.sales_plan === false && <Notice>{t("req.salesPlanOff")}</Notice>}
+        {(r.problems ?? []).filter((x) => x.kind === "compensation_negative").map((x) => (
+          <Notice key={x.code + x.item} tone="danger">{t("req.compNegative", { code: x.code, item: x.item ?? "" })}</Notice>))}
+        {r.cost && r.cost.missing.length > 0 && <Notice tone="warn">{t("req.costMissing", { codes: r.cost.missing.join(", ") })}</Notice>}
 
         <div className="section-head">
           <div className="titles"><h2>{t("req.make")}</h2><p>{t("req.makeLead")}</p></div>
@@ -137,6 +148,8 @@ export function Requirements() {
                     <td className="num">
                       {p.stock_counted ? qty(p.stock_used, 1) : <span className="subtle small">{t("req.stockOff")}</span>}
                       {p.safety > 0 && <div className="small subtle">{t("req.safety")}: {qty(p.safety, 0)}</div>}
+                      {(p.short_dated ?? 0) > 0 && <div><Badge tone="warn">{t("req.shortDated", { q: qty(p.short_dated ?? 0, 0) })}</Badge></div>}
+                      {(p.expired ?? 0) > 0 && <div><Badge tone="danger">{t("req.expired", { q: qty(p.expired ?? 0, 0) })}</Badge></div>}
                     </td>
                     <td className="num cell-main">{qty(p.net, 1)} <span className="subtle small">{p.uom}</span></td>
                     <td>
@@ -176,7 +189,7 @@ export function Requirements() {
               <table className="table req-table">
                 <thead><tr>
                   <th>{t("stock.item")}</th><th className="num">{t("req.required")}</th><th className="num">{t("req.released")}</th>
-                  <th className="num">{t("req.quarantineCol")}</th><th className="num">{t("req.shortage")}</th><th>{t("req.arrival")}</th>
+                  <th className="num">{t("req.quarantineCol")}</th><th className="num">{t("req.shortage")}</th><th className="num">{t("req.order")}</th><th>{t("req.arrival")}</th>
                 </tr></thead>
                 <tbody>
                   {mats.map((m) => (
@@ -186,13 +199,19 @@ export function Requirements() {
                         <div className="small muted">{nameOf(m, lang)}</div>
                         <div className="small subtle">{forList(m.used_by)}</div>
                       </td>
-                      <td className="num">{qty(m.required, 1)} <span className="subtle small">{m.uom}</span><Coverage m={m} /></td>
+                      <td className="num">{qty(m.required, 1)} <span className="subtle small">{m.uom}</span><Coverage m={m} />
+                        {m.potency ? <div className="small subtle" title={t("req.potencyHint")}>{t("req.potency", { pct: qty((m.potency - 1) * 100, 2) })}</div> : null}</td>
                       <td className="num">{m.not_stock_controlled ? <span className="subtle small">{t("req.unlimited")}</span> : qty(m.released, 1)}</td>
                       <td className="num">{m.quarantine > 0 ? qty(m.quarantine, 1) : <span className="subtle">—</span>}</td>
                       <td className="num">
                         {m.shortage > 0 ? <strong className="text-danger">{qty(m.shortage, 1)}</strong> : <span className="subtle">—</span>}
                         {m.quarantine_would_cover && <div><Badge tone="warn">{t("req.qCovers")}</Badge></div>}
                         {m.shortage <= 0 && m.below_safety && <div><Badge tone="warn">{t("req.belowSafety")}</Badge></div>}
+                      </td>
+                      <td className="num">
+                        {m.order_qty ? <strong>{qty(m.order_qty, 1)}</strong> : <span className="subtle">—</span>}
+                        {m.order_qty && m.moq && m.order_qty <= m.moq + 1e-6 ? <div className="small subtle">{t("req.moqApplied")}</div> : null}
+                        {m.order_value ? <div className="small subtle">{qty(m.order_value, 0)} {r.cost?.currency}</div> : null}
                       </td>
                       <td>
                         {m.earliest_arrival ? <>

@@ -25,7 +25,7 @@ MARKETS = [
 ITEMS = [
     # Active ingredients and excipients (tablets)
     ("RM-PCM", "Paracetamol BP (API)", "باراسيتامول (مادة فعالة)", "raw_material", "KG",
-     dict(grade="BP", lead_time_days=120, moq=D(500), safety_stock=D(800), qc_release_days=D(10))),
+     dict(grade="BP", lead_time_days=120, moq=D(500), safety_stock=D(800), qc_release_days=D(10), assay_basis="dried")),
     ("RM-MAIZE", "Maize starch BP", "نشا الذرة", "raw_material", "KG", dict(grade="BP", lead_time_days=45, qc_release_days=D(5))),
     ("RM-PVP", "Povidone K30", "بوفيدون K30", "raw_material", "KG", dict(grade="Ph. Eur.", lead_time_days=60, qc_release_days=D(5))),
     ("RM-MCC", "Microcrystalline cellulose PH102", "ميكروكريستالين سليلوز PH102", "raw_material", "KG",
@@ -45,7 +45,8 @@ ITEMS = [
     ("RM-CIT", "Citric acid monohydrate", "حمض الستريك", "raw_material", "KG", dict(lead_time_days=45, qc_release_days=D(4))),
     ("RM-FLV-ORG", "Orange flavour", "نكهة برتقال", "raw_material", "KG",
      dict(dispensing="L", density_kg_per_l=D("0.85"), lead_time_days=60, qc_release_days=D(4))),
-    ("RM-PW", "Purified water", "ماء منقى", "raw_material", "L", dict(description="Produced on site; no stock limit")),
+    ("RM-PW", "Purified water", "ماء منقى", "raw_material", "L",
+     dict(description="Produced on site; no stock limit", density_kg_per_l=D("1.0"))),
     # Packaging
     ("PM-PVC-250", "PVC film 250 mm, clear", "رقائق PVC عرض 250 مم", "packaging", "KG", dict(lead_time_days=30)),
     ("PM-ALU-250", "Blister lidding foil 250 mm, printed", "رقائق ألومنيوم مطبوعة 250 مم", "packaging", "KG", dict(lead_time_days=45)),
@@ -80,6 +81,16 @@ ITEMS = [
      dict(dosage_form="Syrup", cleaning_group="VITC", shelf_life_months=24, pack_size=D(1), units_per_shipper=60,
           standard_cost=D("21.40"), test_before_sale=True, release_lead_days=D(10))),
 ]
+
+# Standard costs of bought items per stock unit, in the company's cost currency (EGP). Used when Costs is switched on.
+STANDARD_COSTS = {
+    "RM-PCM": D("310"), "RM-MAIZE": D("38"), "RM-PVP": D("520"), "RM-MCC": D("140"), "RM-SSG": D("260"), "RM-MGST": D("190"),
+    "RM-TALC": D("45"), "RM-ASC": D("420"), "RM-SUC": D("32"), "RM-SORB": D("60"), "RM-GLY": D("95"), "RM-NABZ": D("110"),
+    "RM-CIT": D("70"), "RM-FLV-ORG": D("900"), "RM-PW": D("0.05"), "PM-PVC-250": D("150"), "PM-ALU-250": D("480"),
+    "PM-CTN-PCM-EG": D("0.90"), "PM-CTN-PCM-SA": D("1.10"), "PM-LEAF-PCM-EG": D("0.25"), "PM-LEAF-PCM-SA": D("0.30"),
+    "PM-SHP-100": D("18"), "PM-BTL-120": D("2.40"), "PM-CAP-28": D("0.85"), "PM-LBL-VITC": D("0.30"), "PM-CTN-VITC": D("0.95"),
+    "PM-LEAF-VITC": D("0.25"), "PM-CUP-10": D("0.40"), "PM-SHP-60": D("15"),
+}
 
 # Pack conversions: item, uom, factor (1 uom = factor stock units)
 CONVERSIONS = [
@@ -308,7 +319,8 @@ DEMAND = [
 
 # item, lot prefix, [(status, quantity, months since manufacture, assay %, LOD %)]; shelf life in months
 STOCK = [
-    ("FG-PCM-20-EG", "PE", [("released", D(18500), 2, None, None), ("quarantine", D(23800), 0, None, None)], 36),
+    ("FG-PCM-20-EG", "PE", [("released", D(18500), 2, None, None), ("quarantine", D(23800), 0, None, None),
+                            ("released", D(2400), 30, None, None)], 36),
     ("FG-PCM-20-SA", "PS", [("released", D(6200), 3, None, None)], 36),
     ("FG-VITC-120-EG", "VC", [("released", D(7400), 1, None, None), ("quarantine", D(7950), 0, None, None)], 24),
     ("SF-PCM-BLS", "BL", [("released", D(31000), 0, None, None)], 36),
@@ -447,6 +459,10 @@ def load_sample(call: Call):
         cols = ["tenant_id", "code", "name_en", "name_ar", "type", "stock_uom_id", "dispensing_uom_id"] + list(extra)
         vals = [tenant, code, en, ar, typ, uom[stock], uom[disp] if disp else None] + list(extra.values())
         items[code] = _uuid(call, f"INSERT INTO items ({', '.join(cols)}) VALUES ({', '.join(['%s'] * len(cols))}) RETURNING id", *vals)
+
+    for code, cost in STANDARD_COSTS.items():
+        if code in items:
+            tx.x("UPDATE items SET standard_cost = %s WHERE id = %s AND standard_cost IS NULL", cost, items[code])
 
     for code, u, f in CONVERSIONS:
         tx.x("INSERT INTO item_uom_conversions (tenant_id, item_id, uom_id, factor) VALUES (%s, %s, %s, %s)",

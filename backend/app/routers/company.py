@@ -218,10 +218,10 @@ def unlock_user(call: Call):
 # ------------------------------------------------------------------ settings
 @endpoint(auth="tenant_admin")
 def get_settings(call: Call):
-    t = call.tx.one("SELECT id, code, name, country, timezone, default_language, features, terminology, security"
+    t = call.tx.one("SELECT id, code, name, country, timezone, default_language, features, terminology, security, cost_currency"
                     " FROM tenants WHERE id = %s", call.tenant_id)
     return {
-        "company": {k: t[k] for k in ("id", "code", "name", "country", "timezone", "default_language")},
+        "company": {k: t[k] for k in ("id", "code", "name", "country", "timezone", "default_language", "cost_currency")},
         "features": effective_features(t["features"]),
         "feature_groups": {k: v["group"] for k, v in FEATURES.items()},
         "presets": {"pharma": feature_preset("pharma"), "general": feature_preset("general")},
@@ -237,15 +237,16 @@ class CompanyPatch(BaseModel):
     country: str | None = Field(default=None, min_length=2, max_length=2)
     timezone: str | None = Field(default=None, max_length=64)
     default_language: Literal["en", "ar"] | None = None
+    cost_currency: str | None = Field(default=None, pattern=r"^[A-Za-z]{3}$")
 
 
 @endpoint(auth="tenant_admin", body=CompanyPatch)
 def update_company(call: Call):
     b: CompanyPatch = call.body
-    for col in ("name", "country", "timezone", "default_language"):
+    for col in ("name", "country", "timezone", "default_language", "cost_currency"):
         val = getattr(b, col)
         if val is not None:
-            call.tx.x(f"UPDATE tenants SET {col} = %s WHERE id = %s", val.upper() if col == "country" else val,
+            call.tx.x(f"UPDATE tenants SET {col} = %s WHERE id = %s", val.upper() if col in ("country", "cost_currency") else val,
                       call.tenant_id)
     return get_settings.__wrapped__(call)
 

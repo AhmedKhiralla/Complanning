@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from ..defaults import effective_features
 from ..api import ApiError, Call, endpoint, not_found
 from ..perms import require_company_edit
 from ..units import UnitBook
@@ -248,6 +249,13 @@ def discard_bom(call: Call):
 
 
 # ------------------------------------------------------------------ explosion
+def _overage_on(call: Call) -> bool:
+    if "_overage_on" not in call.__dict__:
+        feats = effective_features(call.tx.val("SELECT features FROM tenants WHERE id = %s", call.tenant_id))
+        call.__dict__["_overage_on"] = feats.get("overage", True)
+    return call.__dict__["_overage_on"]
+
+
 def _explode(call: Call, book: UnitBook, bom: dict, qty_stock: Decimal, depth: int, path: tuple) -> list[dict]:
     """Components needed to produce qty_stock (in the parent's stock unit) of bom's item."""
     item = book.item(str(bom["item_id"]))
@@ -256,7 +264,8 @@ def _explode(call: Call, book: UnitBook, bom: dict, qty_stock: Decimal, depth: i
     scale = qty_stock / expected_out
     nodes = []
     for l in call.tx.q(LINES_SQL, bom["id"]):
-        need = Decimal(l["quantity"]) * scale * (Decimal(1) + Decimal(l["overage_pct"]) / Decimal(100))
+        over = Decimal(l["overage_pct"]) if _overage_on(call) else Decimal(0)
+        need = Decimal(l["quantity"]) * scale * (Decimal(1) + over / Decimal(100))
         comp = book.item(str(l["component_item_id"]))
         need_stock = book.convert(comp, need, str(l["uom_id"]), str(comp["stock_uom_id"]))
         node = {

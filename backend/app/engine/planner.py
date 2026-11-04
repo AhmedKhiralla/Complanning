@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
-from ..netting import month_end, price_on
+from ..netting import add_months, line_needs, load_demand, lot_expiry, month_end, potency_factors, price_on, shelf_ok
 from ..routers.rules import Resolver
 from ..units import UnitBook
 from .calendar import WorkCalendar, site_calendar, to_naive_utc
@@ -32,7 +32,7 @@ PRODUCED = ("wip", "semi_finished", "finished")
 USE_STOCK = {"finished": "use_stock_fg", "semi_finished": "use_stock_semi", "wip": "use_stock_wip"}
 EPS = 1e-6
 H = dt.timedelta(hours=1)
-ENGINE_VERSION = "complanning-1.0"
+ENGINE_VERSION = "complanning-1.1"
 
 # Weights per objective: due date (per hour), changeover (per hour), value density.
 WEIGHTS = {
@@ -80,6 +80,8 @@ class Batch:
     problem: str | None = None                 # no_bom, no_routing, no_machine
     ordinal: int = 0                           # nth batch of this item in the plan; locks refer to it
     lock: dict | None = None                   # {"start": datetime, "machines": {seq: resource_id}}
+    material_cost: float | None = None         # bought materials at standard cost (costs switched on)
+    campaign_group: tuple | None = None        # batches that a minimum campaign keeps together
 
 
 @dataclass
@@ -98,6 +100,8 @@ class DemandRow:
     currency: str | None
     from_stock: float = 0.0
     stock_ready: dt.datetime | None = None
+    min_shelf: float | None = None             # the market's minimum remaining shelf life, % of total
+    before_rounding: float | None = None       # quantity before rounding to full shippers
     sources: list[tuple[Batch, float]] = field(default_factory=list)
 
 
@@ -126,6 +130,7 @@ class Plan:
     pools: dict[str, dict]             # material stock: released, quarantine, quarantine_ready, arrival, unlimited
     warnings: list[dict]
     options: dict
+    cost_currency: str | None = None           # set when costs are switched on
 
 
 # ------------------------------------------------------------------ loading and batching
@@ -147,6 +152,7 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
         "release_at_risk": features.get("release_at_risk", True) and options.get("release_at_risk", False),
         "campaign_limits": features.get("campaign_limits", True), "equipment_holds": features.get("equipment_hold_times", True),
         "verification": features.get("cleaning_verification", True),
+        "costs": bool(features.get("costs", False)),
     }
     start_local = dt.datetime.combine(horizon_start, dt.time(0), tz)
     start = max(to_naive_utc(start_local), now.replace(second=0, microsecond=0))
@@ -157,7 +163,8 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
     items = {str(r["id"]): r for r in tx.q(
         "SELECT i.id, i.code, i.type, i.stock_uom_id, u.code AS uom, i.safety_stock, i.lead_time_days, i.qc_release_days,"
         " i.release_lead_days, i.not_stock_controlled, i.hold_min_hours, i.hold_max_hours, i.release_at_risk_allowed,"
-        " i.test_before_sale FROM items i JOIN uoms u ON u.id = i.stock_uom_id")}
+        " i.test_before_sale, i.standard_cost, i.shelf_life_months, i.units_per_shipper, i.pack_size"
+        " FROM items i JOIN uoms u ON u.id = i.stock_uom_id")}
     boms = {str(b["item_id"]): b for b in tx.q("SELECT * FROM boms WHERE status = 'active'")}
     lines = defaultdict(list)
     for l in tx.q("SELECT l.* FROM bom_lines l JOIN boms b ON b.id = l.bom_id WHERE b.status = 'active' ORDER BY l.line_no"):
@@ -230,33 +237,54 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
         if not changed:
             break
 
-    # Stock.
+    # Stock. Materials are pooled; produced items are kept by lot, first expiry first out, so shelf life can be checked.
     stock = defaultdict(lambda: {"released": 0.0, "quarantine": 0.0})
-    for s in tx.q("SELECT item_id, status, sum(quantity) AS q FROM stock_lots WHERE site_id = %s::uuid AND status <> 'rejected'"
-                  " AND (expires_on IS NULL OR expires_on >= %s) GROUP BY item_id, status", site["id"], horizon_start):
-        stock[str(s["item_id"])][s["status"]] += float(s["q"])
+    lots: dict[str, list[dict]] = defaultdict(list)
+    for s in tx.q("SELECT item_id, status, quantity, manufactured_on, expires_on FROM stock_lots WHERE site_id = %s::uuid"
+                  " AND status <> 'rejected' AND quantity > 0", site["id"]):
+        iid = str(s["item_id"])
+        it = items.get(iid)
+        if not it:
+            continue
+        exp = lot_expiry(s, it["shelf_life_months"])
+        if exp and exp < horizon_start:
+            continue
+        stock[iid][s["status"]] += float(s["quantity"])
+        if it["type"] in PRODUCED:
+            lots[iid].append({"status": s["status"], "qty": float(s["quantity"]), "exp": exp, "made": s["manufactured_on"]})
+    for ls in lots.values():
+        ls.sort(key=lambda x: (x["status"] != "released", x["exp"] or dt.date.max))
     use_q = bool(options.get("include_quarantine"))
+    factors = potency_factors(tx, site["id"], use_q, horizon_start, bool(features.get("assay_compensation", True)))
+    cost_currency = tx.val("SELECT cost_currency FROM tenants LIMIT 1") if rules["costs"] else None
 
     def q_ready(it: dict) -> dt.datetime:
         days = float((it["qc_release_days"] if it["type"] not in PRODUCED else it["release_lead_days"]) or 0)
         return start + dt.timedelta(days=days if rules["qc_lead_times"] else 0)
 
-    # Demand due in the horizon, capped at the sales limit.
+    # Demand due in the horizon (the sales plan, or the sales limits when the sales plan is switched off),
+    # capped at the sales limit and rounded to full shippers.
     demand: list[DemandRow] = []
-    for d in tx.q(
-            "SELECT d.id, d.item_id, d.market_id, d.month, d.quantity, d.due_date, m.code AS market, im.max_sellable_per_month AS max_qty"
-            "  FROM demand_lines d JOIN markets m ON m.id = d.market_id"
-            "  LEFT JOIN item_markets im ON im.item_id = d.item_id AND im.market_id = d.market_id"
-            " WHERE d.site_id = %s::uuid AND coalesce(d.due_date, (d.month + interval '1 month - 1 day')::date) BETWEEN %s AND %s"
-            " ORDER BY coalesce(d.due_date, (d.month + interval '1 month - 1 day')::date), d.quantity DESC",
-            site["id"], horizon_start, horizon_end):
+    shippers = options.get("full_shippers", True)
+    for d in load_demand(tx, site["id"], horizon_start, horizon_end, features):
+        it = items[str(d["item_id"])]
         due_date = d["due_date"] or month_end(d["month"])
         due_at = to_naive_utc(dt.datetime.combine(due_date + dt.timedelta(days=1), dt.time(0), tz))
         qty = float(d["quantity"])
-        capped = min(qty, float(d["max_qty"])) if d["max_qty"] is not None and options.get("cap_to_limit", True) else qty
+        limit = float(d["max_qty"]) if d["max_qty"] is not None and options.get("cap_to_limit", True) else None
+        capped = min(qty, limit) if limit is not None else qty
+        before = None
+        ups = float(it["units_per_shipper"] or 0)
+        if shippers and ups > 0 and capped > EPS:
+            r = math.ceil(capped / ups - 1e-9) * ups
+            if limit is not None and r > limit + EPS:
+                r = math.floor(limit / ups + 1e-9) * ups
+            if abs(r - capped) > EPS:
+                before, capped = capped, r
         p = price_on(tx, d["item_id"], d["market_id"], plan_date)
-        demand.append(DemandRow(str(d["id"]), str(d["item_id"]), items[str(d["item_id"])]["code"], str(d["market_id"]), d["market"],
-                                d["month"], due_at, due_date, qty, capped, float(p["price"]) if p else None, p["currency"] if p else None))
+        demand.append(DemandRow(str(d["id"]) if d["id"] else None, str(d["item_id"]), it["code"], str(d["market_id"]), d["market"],
+                                d["month"], due_at, due_date, qty, capped, float(p["price"]) if p else None, p["currency"] if p else None,
+                                min_shelf=float(d["min_shelf"]) if d["min_shelf"] else None, before_rounding=before))
 
     # Requirements per item: (need_by, qty, consumer). Consumers are DemandRow or Batch.
     reqs: dict[str, list] = defaultdict(list)
@@ -272,29 +300,39 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
             continue
         rs = sorted(reqs.get(iid, []), key=lambda r: r[0])
         use = features.get(USE_STOCK[it["type"]], True)
-        free = stock[iid]["released"] if use else 0.0
-        free_q = stock[iid]["quarantine"] if (use and use_q) else 0.0
+        item_lots = [dict(x) for x in lots.get(iid, [])
+                     if use and (x["status"] == "released" or use_q)]
         remaining = []
+        short_dated = defaultdict(float)
         for need_by, q, consumer in rs:
-            for pool, ready in (("r", start), ("q", q_ready(it))):
-                avail = free if pool == "r" else free_q
-                take = min(q, avail)
-                if take > EPS:
-                    if pool == "r":
-                        free -= take
-                    else:
-                        free_q -= take
-                    q -= take
-                    if isinstance(consumer, DemandRow):
-                        consumer.from_stock += take
-                        consumer.stock_ready = max(consumer.stock_ready or ready, ready)
-                    else:
-                        consumer.stock_ready = max(consumer.stock_ready or ready, ready)
+            for lot in item_lots:
+                if q <= EPS:
+                    break
+                if lot["qty"] <= EPS:
+                    continue
+                if isinstance(consumer, DemandRow):
+                    if not shelf_ok(lot["exp"], lot["made"], it["shelf_life_months"], None, consumer.due_date):
+                        continue
+                    if not shelf_ok(lot["exp"], lot["made"], it["shelf_life_months"], consumer.min_shelf, consumer.due_date):
+                        short_dated[consumer.market] += min(q, lot["qty"])
+                        continue
+                elif lot["exp"] and lot["exp"] < need_by.date():
+                    continue
+                take = min(q, lot["qty"])
+                lot["qty"] -= take
+                q -= take
+                ready = start if lot["status"] == "released" else q_ready(it)
+                if isinstance(consumer, DemandRow):
+                    consumer.from_stock += take
+                consumer.stock_ready = max(consumer.stock_ready or ready, ready)
             if q > EPS:
                 remaining.append([need_by, q, consumer])
+        for market, q in short_dated.items():
+            warnings.append({"kind": "short_shelf_life", "code": it["code"], "market": market, "quantity": q, "uom": it["uom"]})
+        free = sum(x["qty"] for x in item_lots)
         safety = float(it["safety_stock"] or 0)
-        if use and safety > 0 and free + free_q < safety:
-            remaining.append([h_end, safety - free - free_q, None])
+        if use and safety > 0 and free < safety:
+            remaining.append([h_end, safety - free, None])
         if not remaining:
             continue
 
@@ -337,23 +375,32 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
         for b in made:
             b.steps, b.problem = steps_for(iid, b.qty)
             lead = sum(min(o.minutes for o in s.options) for s in b.steps) / (60 * 16) + 1
-            scale = b.qty / expected
-            for l in lines[str(bom["id"])]:
+            needs, probs = line_needs(book, lines[str(bom["id"])], Decimal(str(b.qty / expected)), features, factors)
+            for pr in probs:
+                w = {**pr, "item": it["code"]}
+                if w not in warnings:
+                    warnings.append(w)
+            for l, need in needs:
                 cid = str(l["component_item_id"])
-                comp = book.item(cid)
-                need = float(l["quantity"]) * scale * (1 + float(l["overage_pct"]) / 100)
-                need = float(book.convert(comp, Decimal(str(need)), str(l["uom_id"]), str(comp["stock_uom_id"])))
+                need = float(need)
                 citem = items[cid]
                 if citem["type"] in PRODUCED:
                     need_by = b.need_by - dt.timedelta(days=lead) - _release_delay(citem, bool(options.get("release_at_risk")), rules)
                     reqs[cid].append([need_by, need, b])
                 else:
                     b.materials.append((cid, need))
+            if rules["costs"]:
+                known = [(items[c]["standard_cost"], q) for c, q in b.materials]
+                b.material_cost = sum(float(c) * q for c, q in known if c is not None)
     # Values: finished batches carry the value of the demand they serve; components share it.
     for b in batches:
         for consumer, q in b.consumers:
             if isinstance(consumer, DemandRow) and consumer.price:
-                b.value += consumer.price * q
+                unit = consumer.price
+                cost = items[b.item_id]["standard_cost"]
+                if rules["costs"] and cost is not None and consumer.currency == cost_currency:
+                    unit = max(0.0, consumer.price - float(cost))      # sales value objective works on margin
+                b.value += unit * q
                 b.currency = consumer.currency
     for b in sorted(batches, key=lambda x: x.level):
         for consumer, q in b.consumers:
@@ -375,6 +422,24 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
         for pool in pools.values():
             pool["unlimited"] = True
 
+    campaigns = {}
+    if rules["campaign_limits"]:
+        for c in tx.q("SELECT item_id, resource_id, max_batches, max_days, min_batches FROM campaign_rules WHERE site_id = %s::uuid", site["id"]):
+            campaigns[(str(c["item_id"]), str(c["resource_id"]) if c["resource_id"] else None)] = c
+        # Minimum campaign: batches of the item are made together in groups of at least that size, so the group
+        # starts as early as its first batch would and the engine keeps them on the machine back to back.
+        mins: dict[str, int] = {}
+        for (iid, _rid), c in campaigns.items():
+            if c["min_batches"] and c["min_batches"] > 1:
+                mins[iid] = max(mins.get(iid, 0), int(c["min_batches"]))
+        for iid, n in mins.items():
+            mine = sorted((b for b in batches if b.item_id == iid and b.steps and not b.lock), key=lambda b: b.need_by)
+            for i in range(0, len(mine), n):
+                group = mine[i:i + n]
+                first = min(b.need_by for b in group)
+                for b in group:
+                    b.need_by = first
+                    b.campaign_group = (iid, i // n)
     # Ordinals and locks. A lock fixes a batch's start and machines; what feeds it must be ready in time.
     seen: dict[str, int] = defaultdict(int)
     for b in batches:
@@ -388,8 +453,8 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
             continue
         b.lock = {"start": _naive(lk["start"]), "machines": {int(k): str(v) for k, v in (lk.get("machines") or {}).items()}}
         b.need_by = min(b.need_by, b.lock["start"])
-    # What feeds a locked batch gets an earlier deadline when needed, down the chain.
-    pushed = {b.key for b in batches if b.lock}
+    # What feeds a locked batch (or a minimum campaign) gets an earlier deadline when needed, down the chain.
+    pushed = {b.key for b in batches if b.lock or b.campaign_group}
     for b in sorted(batches, key=lambda x: x.level):
         if b.key not in pushed:
             continue
@@ -449,16 +514,12 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
         if b.not_before is not None and b.not_before <= start:
             b.not_before = None
 
-    campaigns = {}
-    if rules["campaign_limits"]:
-        for c in tx.q("SELECT item_id, resource_id, max_batches, max_days, min_batches FROM campaign_rules WHERE site_id = %s::uuid", site["id"]):
-            campaigns[(str(c["item_id"]), str(c["resource_id"]) if c["resource_id"] else None)] = c
     for d in demand:
         if d.quantity < d.requested - EPS:
             warnings.append({"kind": "capped", "code": d.code, "market": d.market, "month": d.month.strftime("%Y-%m"),
                              "requested": d.requested, "quantity": d.quantity})
     return Plan(start, h_end, objective, batches, demand, machines, Resolver(tx, site["id"]), items, campaigns, rules, pools,
-                warnings, options)
+                warnings, options, cost_currency)
 
 
 def _naive(v) -> dt.datetime:
@@ -673,6 +734,12 @@ class Scheduler:
         co_h = (r.co_minutes + r.co_wait + r.reclean_minutes) / 60
         val = b.value / self.max_value * 400                 # value density on a scale comparable to hours
         score = self.w["due"] * due_h + self.w["co"] * co_h - self.w["val"] * val
+        # A minimum campaign that has started on this machine is continued first.
+        last = self.last[r.machine.id]
+        if last and last[0] == b.item_id and last[1] != b.key and r.co_kind != "campaign_end":
+            camp = self.p.campaigns.get((b.item_id, r.machine.id)) or self.p.campaigns.get((b.item_id, None))
+            if camp and camp["min_batches"] and self.run_count[r.machine.id] < camp["min_batches"]:
+                score -= 100000
         if self.noise:
             score += self.rng.uniform(-self.noise, self.noise)
         return score
@@ -940,10 +1007,26 @@ def summarise(s: Scheduler, runtime_ms: int, runs: int) -> dict:
         for n in s.material_notes.get(b.key, []):
             warnings.append({"kind": "material_short", "code": n["code"], "batch": b.code, "key": b.key, "short": n["short"],
                              "arrival": as_utc(n["arrival"]), "no_lead_time": n["no_lead_time"]})
+    warnings += _campaign_short(s) + _shelf_life_short(s, dem)
     after = [b for b in p.batches if b.key in s.done and s.done[b.key]["end"] > p.horizon_end]
     if after:
         warnings.append({"kind": "after_horizon", "count": len(after)})
     co_h = sum(o.co_minutes + o.co_wait + o.reclean_minutes for o in s.ops) / 60
+    cost = None
+    if p.cost_currency:
+        cur = p.cost_currency
+        fg_cost = lambda iid: p.items[iid]["standard_cost"]
+        delivered = [x for x in active if x["fulfilled"]]
+        cost = {
+            "currency": cur,
+            "materials": round(sum(b.material_cost or 0 for b in p.batches if b.key in s.done), 2),
+            "deliveries": round(sum(float(fg_cost(x["row"].item_id)) * x["row"].quantity for x in delivered
+                                    if fg_cost(x["row"].item_id) is not None), 2),
+            "margin": round(sum((x["row"].price - float(fg_cost(x["row"].item_id))) * x["row"].quantity for x in delivered
+                                if x["row"].price and x["row"].currency == cur and fg_cost(x["row"].item_id) is not None), 2),
+            "missing": sorted({p.items[c]["code"] for b in p.batches for c, _q in b.materials if p.items[c]["standard_cost"] is None}
+                              | {x["row"].code for x in active if fg_cost(x["row"].item_id) is None}),
+        }
     return {
         "batches": len(p.batches), "scheduled": len(s.done), "unscheduled": len(s.failed),
         "demand_lines": len(active), "on_time": on_time, "late": sum(1 for x in active if x["fulfilled"] and not x["on_time"]),
@@ -955,5 +1038,62 @@ def summarise(s: Scheduler, runtime_ms: int, runs: int) -> dict:
         "campaign_breaks": s.campaign_breaks,
         "finish": as_utc(max([o.end for o in s.ops], default=None)),
         "utilization": sorted(util, key=lambda u: -(u["utilization"] or 0)),
-        "warnings": warnings, "runtime_ms": runtime_ms, "runs": runs, "engine": ENGINE_VERSION,
+        "warnings": warnings, "runtime_ms": runtime_ms, "runs": runs, "engine": ENGINE_VERSION, "cost": cost,
+        "rounded": sum(1 for x in active if x["row"].before_rounding is not None),
     }
+
+
+def batch_expiry(s: Scheduler, b: Batch) -> dt.date | None:
+    """End of production plus the item's shelf life, as a date at the site."""
+    months = s.p.items[b.item_id]["shelf_life_months"]
+    d = s.done.get(b.key)
+    if not months or not d:
+        return None
+    return add_months(d["end"].date(), months)
+
+
+def _campaign_short(s: Scheduler) -> list[dict]:
+    """Runs of an item on a machine that are shorter than its minimum campaign (one warning per item: the shortest)."""
+    p = s.p
+    if not p.campaigns:
+        return []
+    by_m = defaultdict(list)
+    for o in s.ops:
+        by_m[o.machine.id].append(o)
+    worst: dict[str, dict] = {}
+    for mid, ops in by_m.items():
+        ops.sort(key=lambda o: o.start)
+        runs, cur = [], None
+        for o in ops:
+            if cur and cur["item"] == o.batch.item_id and o.co_kind != "campaign_end":
+                cur["keys"].add(o.batch.key)
+            else:
+                cur = {"item": o.batch.item_id, "keys": {o.batch.key}}
+                runs.append(cur)
+        for r in runs:
+            camp = p.campaigns.get((r["item"], mid)) or p.campaigns.get((r["item"], None))
+            if not camp or not camp["min_batches"] or len(r["keys"]) >= camp["min_batches"]:
+                continue
+            have = sum(1 for b in p.batches if b.item_id == r["item"])
+            w = {"kind": "campaign_short", "code": p.items[r["item"]]["code"], "machine": p.machines[mid].code,
+                 "batches": len(r["keys"]), "min": camp["min_batches"], "planned": have}
+            if r["item"] not in worst or w["batches"] < worst[r["item"]]["batches"]:
+                worst[r["item"]] = w
+    return list(worst.values())
+
+
+def _shelf_life_short(s: Scheduler, dem: list[dict]) -> list[dict]:
+    """Deliveries from new batches that would arrive with less shelf life left than the market requires."""
+    out = []
+    for x in dem:
+        d = x["row"]
+        if not d.min_shelf:
+            continue
+        months = s.p.items[d.item_id]["shelf_life_months"]
+        for b, _q in d.sources:
+            exp = batch_expiry(s, b)
+            if exp and not shelf_ok(exp, s.done[b.key]["end"].date(), months, d.min_shelf, d.due_date):
+                out.append({"kind": "shelf_life_short", "code": d.code, "market": d.market, "batch_key": b.key,
+                            "expires": exp, "min": d.min_shelf})
+                break
+    return out

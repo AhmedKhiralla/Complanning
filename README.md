@@ -28,6 +28,11 @@ Released so far:
   there and the engine re-plans everything else around it. Lock and unlock batches, re-plan with the
   current sales plan and stock, release one plan per site as the official plan, and compare two or
   three plans side by side.
+- **Version 0.7 – Every setting takes effect**: assay compensation (lot assay and loss on drying, per item
+  assay basis), overage and the compensating material change material quantities; Sales plan off plans every
+  product at its sales limits; Holiday import can be switched off; Costs adds standard costs, material cost and
+  margin; minimum campaigns keep batches together; shelf life gives batches an expiry and checks each market's
+  minimum remaining shelf life; minimum order quantities shape suggested orders; deliveries round to full shippers.
 
 The web app is English and Arabic (right-to-left), with light, dark and system themes.
 
