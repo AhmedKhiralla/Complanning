@@ -36,6 +36,10 @@ Released so far:
 - **Version 0.8 – Getting started**: a twelve-step setup checklist on Home that ticks itself off from the
   company's real data, and a short guided tour the first time each main page is opened (replay with the ? next to
   the page title). Users can hide the checklist and replay tours from their user menu; the choice follows the user.
+- **Version 0.9 – AI assistant**: a chat panel on every page that answers from the user's own plans, deliveries,
+  requirements, stock, items, setup and the user manual, through read-only tools that run with the user's own
+  access. Works with Qwen (or any OpenAI-compatible API), mid-priced model by default, daily limit per user,
+  switch per company, connection test and usage in Company settings.
 
 The web app is English and Arabic (right-to-left), with light, dark and system themes.
 
@@ -88,6 +92,18 @@ You need the PostgreSQL database already created in your Railway project.
    used once, to create the first administrator when none exists.
 6. **Create a company** under **Companies**. Copy the one-time password shown for its administrator and
    share it securely. That person signs in, sets their own password, and adds sites and users.
+
+7. **AI assistant (optional).** Add these variables to the app service, then redeploy:
+
+   | Variable | Value |
+   | --- | --- |
+   | `AI_API_KEY` | your Qwen (Alibaba Cloud Model Studio) API key — never put it in the code |
+   | `AI_BASE_URL` | the OpenAI-compatible address of the key's region or workspace, ending in `/compatible-mode/v1`. Default: `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (Singapore). A workspace key uses `https://<WorkspaceId>.<region>.maas.aliyuncs.com/compatible-mode/v1`, as shown in the Model Studio console |
+   | `AI_MODEL` | `qwen-plus` (default, mid-priced). `qwen-flash` or `qwen-turbo` cost less; `qwen-max` is the most capable and the most expensive |
+   | `AI_DAILY_LIMIT` | questions per user per day, default `50` |
+
+   Then open **Company settings → Features → Assistant → Test connection**. Any OpenAI-compatible service works
+   the same way. Questions and answers are not stored; only daily counters are.
 
 On every start the app applies new database migrations automatically (with a lock, so two instances never
 migrate at once). The database must be UTF-8, which is Railway's default.

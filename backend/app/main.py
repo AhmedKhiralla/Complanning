@@ -14,7 +14,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from .config import settings
-from .routers import audit_trail, auth, boms, company, demand, excel, guide, master, plans, platform, production, rules, sample
+from .routers import assistant, audit_trail, auth, boms, company, demand, excel, guide, master, plans, platform, production, rules, sample
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -29,6 +29,10 @@ API_ROUTES = [
     Route("/api/auth/change-password", auth.change_password, methods=["POST"]),
     Route("/api/auth/preferences", auth.preferences, methods=["PATCH"]),
     Route("/api/setup-progress", guide.setup_progress, methods=["GET"]),
+    Route("/api/assistant/status", assistant.status, methods=["GET"]),
+    Route("/api/assistant/chat", assistant.chat, methods=["POST"]),
+    Route("/api/assistant/test", assistant.test_connection, methods=["POST"]),
+    Route("/api/assistant/usage", assistant.usage, methods=["GET"]),
     # Platform administration
     Route("/api/platform/tenants", platform.list_tenants, methods=["GET"]),
     Route("/api/platform/tenants", platform.create_tenant, methods=["POST"]),

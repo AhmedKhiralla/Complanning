@@ -14,10 +14,14 @@ def _step(key: str, done: bool, to: str, have: int | None = None, total: int | N
 def setup_progress(call: Call):
     """Twelve steps, in the order of the Getting Started Tutorial. Company-wide steps are checked for the whole
     company; site steps for the site in ?site_id= (or reported as not done when there is no site yet)."""
-    tx = call.tx
     sid = call.query.get("site_id") or None
     if sid:
         require_site(call, sid)
+    return progress(call, sid)
+
+
+def progress(call: Call, sid: str | None) -> dict:
+    tx = call.tx
     feats = effective_features(tx.val("SELECT features FROM tenants WHERE id = %s", call.tenant_id))
     sites = tx.val("SELECT count(*) FROM sites WHERE active")
     markets = tx.val("SELECT count(*) FROM markets WHERE active")

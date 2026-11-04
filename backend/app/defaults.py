@@ -23,6 +23,8 @@ FEATURES: dict[str, dict] = {
     "holiday_import":        {"group": "production", "pharma": True, "general": True},
     # Costs
     "costs":                 {"group": "costs", "pharma": False, "general": False},
+    # Assistant (needs AI_API_KEY on the server)
+    "ai_assistant":          {"group": "assistant", "pharma": True, "general": True},
 }
 
 

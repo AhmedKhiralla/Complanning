@@ -125,6 +125,7 @@ def me_payload(call: Call) -> dict:
             "timezone": t["timezone"], "default_language": t["default_language"], "cost_currency": t["cost_currency"],
             "features": effective_features(t["features"]),
             "terminology": effective_terms(t["terminology"]),
+            "assistant": bool(settings.ai_api_key) and effective_features(t["features"]).get("ai_assistant", True),
         }
         if u["is_tenant_admin"]:
             sites = tx.q("SELECT id, code, name, country, timezone, active FROM sites WHERE active ORDER BY code")

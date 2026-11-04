@@ -33,6 +33,14 @@ class Settings:
         "FRONTEND_DIST",
         os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist")))
     run_migrations: bool = field(default_factory=lambda: _bool("RUN_MIGRATIONS", True))
+    # AI assistant (any OpenAI-compatible chat API; Qwen on Alibaba Cloud Model Studio by default).
+    ai_api_key: str | None = field(default_factory=lambda: os.environ.get("AI_API_KEY") or None)
+    ai_base_url: str = field(default_factory=lambda: os.environ.get(
+        "AI_BASE_URL", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1").rstrip("/"))
+    # A mid-priced model by default; set AI_MODEL to change it without a new release.
+    ai_model: str = field(default_factory=lambda: os.environ.get("AI_MODEL", "qwen-plus"))
+    ai_daily_limit: int = field(default_factory=lambda: int(os.environ.get("AI_DAILY_LIMIT", "50")))
+    ai_timeout_s: int = field(default_factory=lambda: int(os.environ.get("AI_TIMEOUT_SECONDS", "60")))
 
 
 settings = Settings()

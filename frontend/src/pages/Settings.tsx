@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Button, LoadError, Notice, PageHead, SelectField, Switch, TextField, errorText, fieldErrors, useLoad, useToast,
 } from "../components/ui";
-import { get, patch, put } from "../lib/api";
+import { get, patch, post, put } from "../lib/api";
 import { COUNTRIES, timeZones } from "../lib/geo";
 import { useI18n } from "../lib/i18n";
 import { navigate } from "../lib/router";
@@ -76,7 +76,7 @@ function FeaturesTab({ data, onSaved }: { data: SettingsData; onSaved: (d: Setti
   const [f, setF] = useState({ ...data.features });
   const s = useSaver(onSaved);
   const dirty = Object.keys(f).some((k) => f[k] !== data.features[k]);
-  const groups = ["materials", "quality", "production", "costs"];
+  const groups = ["materials", "quality", "production", "costs", "assistant"];
   return (
     <div className="stack">
       <div className="row wrap">
@@ -94,12 +94,41 @@ function FeaturesTab({ data, onSaved }: { data: SettingsData; onSaved: (d: Setti
               <Switch label={tx(`feature.${k}`, k)} checked={f[k]} onChange={(v) => setF({ ...f, [k]: v })} />
             </div>
           ))}
+          {g === "assistant" && <AssistantConnection />}
         </section>
       ))}
       <div className="row">
         <Button variant="primary" busy={s.busy} disabled={!dirty} onClick={() => s.run(() => put("/api/settings/features", { features: f }))}>{t("common.save")}</Button>
         {dirty && <Button variant="ghost" onClick={() => setF({ ...data.features })}>{t("common.cancel")}</Button>}
       </div>
+    </div>
+  );
+}
+
+function AssistantConnection() {
+  const { t, qty } = useI18n();
+  const status = useLoad(() => get<{ configured: boolean; model: string }>("/api/assistant/status"));
+  const usage = useLoad(() => get<{ days: { questions: number; prompt_tokens: number; completion_tokens: number }[] }>("/api/assistant/usage"));
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const st = status.data;
+  const totals = (usage.data?.days ?? []).reduce((a, d) => ({ q: a.q + Number(d.questions), tk: a.tk + Number(d.prompt_tokens) + Number(d.completion_tokens) }), { q: 0, tk: 0 });
+  return (
+    <div className="panel-body stack" style={{ gap: 10, borderTop: "1px solid var(--line)" }}>
+      <div><strong>{t("ai.settings.title")}</strong><p className="small muted" style={{ margin: "2px 0 0" }}>{t("ai.settings.lead")}</p></div>
+      {st && !st.configured ? <Notice tone="warn">{t("ai.settings.notConfigured")}</Notice> : st && <>
+        <div className="row wrap" style={{ gap: 12 }}>
+          <span className="small mono-id">{t("ai.settings.model", { model: st.model })}</span>
+          <Button size="sm" busy={busy} onClick={async () => {
+            setBusy(true); setResult(null);
+            try { const r = await post<{ ms: number }>("/api/assistant/test"); setResult({ ok: true, text: t("ai.settings.ok", { ms: r.ms }) }); }
+            catch (e) { setResult({ ok: false, text: errorText(e, t) }); }
+            finally { setBusy(false); }
+          }}>{t("ai.settings.test")}</Button>
+          {usage.data && <span className="small subtle">{t("ai.settings.usage", { q: qty(totals.q, 0), tk: qty(totals.tk, 0) })}</span>}
+        </div>
+        {result && <Notice tone={result.ok ? "ok" : "danger"}>{result.text}</Notice>}
+      </>}
     </div>
   );
 }

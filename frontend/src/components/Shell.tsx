@@ -11,6 +11,7 @@ import { useTheme } from "../lib/theme";
 import type { StringKey } from "../lib/strings";
 import { Button, Menu, MenuItem, initials, useToast } from "./ui";
 import { TourProvider, useGuidePrefs } from "./guide";
+import { Assistant } from "./assistant";
 import { Logo } from "./Logo";
 
 type NavItem = { to?: string; label: StringKey; icon: ReactNode; phase?: number };
@@ -100,7 +101,7 @@ export function Shell({ children }: { children: ReactNode }) {
             </div>
           ))}
         </nav>
-        <div className="sidebar-foot">{t("shell.version", { v: "0.8" })} · Comp11 Labs</div>
+        <div className="sidebar-foot">{t("shell.version", { v: "0.9" })} · Comp11 Labs</div>
       </aside>
       {navOpen && <div className="scrim" onClick={() => setNavOpen(false)} />}
 
@@ -155,6 +156,7 @@ export function Shell({ children }: { children: ReactNode }) {
           </Menu>
         </header>
         <main className="content" id="main"><TourProvider>{children}</TourProvider></main>
+        {!u.is_platform_admin && <Assistant />}
       </div>
     </div>
   );

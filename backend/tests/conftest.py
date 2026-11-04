@@ -84,10 +84,72 @@ def db_url():
     return _db_url(TEST_DB)
 
 
+class FakeAI:
+    """Stands in for an OpenAI-compatible chat API (Qwen on Model Studio): scripted tool calls, recorded requests."""
+
+    def __init__(self):
+        import http.server
+        import threading
+        self.requests: list[dict] = []
+        fake = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                fake.requests.append({"path": self.path, "auth": self.headers.get("Authorization"), "body": body})
+                out = json.dumps(fake.reply(body)).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(out)))
+                self.end_headers()
+                self.wfile.write(out)
+
+        self.httpd = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}/v1"
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    @staticmethod
+    def reply(body):
+        msgs = body["messages"]
+        last = msgs[-1]
+        usage = {"prompt_tokens": 100, "completion_tokens": 20}
+        if "tools" not in body:
+            return {"choices": [{"message": {"role": "assistant", "content": "OK"}}], "usage": usage}
+        if last["role"] == "tool":
+            return {"choices": [{"message": {"role": "assistant", "content": "ANSWER " + last["content"][:400]}}], "usage": usage}
+        text = last["content"].lower()
+        call = None
+        if "late" in text:
+            call = ("explain_delivery", {"product_code": "FG-PCM-20-EG"})
+        elif "how" in text:
+            call = ("search_help", {"query": text})
+        elif "setup" in text:
+            call = ("check_setup", {})
+        elif "plans" in text:
+            call = ("list_plans", {})
+        elif "bogus" in text:
+            call = ("get_plan", {"plan_id": "00000000-0000-0000-0000-000000000000"})
+        if not call:
+            return {"choices": [{"message": {"role": "assistant", "content": "Hello"}}], "usage": usage}
+        return {"choices": [{"message": {"role": "assistant", "content": None, "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": call[0], "arguments": json.dumps(call[1])}}]}}], "usage": usage}
+
+
 @pytest.fixture(scope="session")
-def server(db_url):
+def fake_ai():
+    f = FakeAI()
+    yield f
+    f.httpd.shutdown()
+
+
+@pytest.fixture(scope="session")
+def server(db_url, fake_ai):
     port = _free_port()
     env = dict(os.environ, DATABASE_URL=db_url, COOKIE_SECURE="false",
+               AI_API_KEY="test-key", AI_BASE_URL=fake_ai.url, AI_MODEL="qwen-plus", AI_DAILY_LIMIT="12",
                PLATFORM_ADMIN_EMAIL=PLATFORM_EMAIL, PLATFORM_ADMIN_PASSWORD=PLATFORM_PASSWORD,
                FRONTEND_DIST=str(BACKEND / "tests" / "no-frontend"), LOG_LEVEL="WARNING")
     proc = subprocess.Popen([sys.executable, "-m", "uvicorn", "app.main:app", "--port", str(port),
