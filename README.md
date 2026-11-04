@@ -33,6 +33,9 @@ Released so far:
   product at its sales limits; Holiday import can be switched off; Costs adds standard costs, material cost and
   margin; minimum campaigns keep batches together; shelf life gives batches an expiry and checks each market's
   minimum remaining shelf life; minimum order quantities shape suggested orders; deliveries round to full shippers.
+- **Version 0.8 – Getting started**: a twelve-step setup checklist on Home that ticks itself off from the
+  company's real data, and a short guided tour the first time each main page is opened (replay with the ? next to
+  the page title). Users can hide the checklist and replay tours from their user menu; the choice follows the user.
 
 The web app is English and Arabic (right-to-left), with light, dark and system themes.
 
