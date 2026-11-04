@@ -25,7 +25,7 @@ SELECT b.id, b.item_id, b.version, b.status, b.valid_from, b.valid_to, b.batch_s
 LINES_SQL = """
 SELECT l.id, l.line_no, l.component_item_id, c.code AS component_code, c.name_en AS component_name_en,
        c.name_ar AS component_name_ar, c.type AS component_type, l.quantity, l.uom_id, u.code AS uom,
-       l.assay_compensated, l.overage_pct, l.is_compensating, l.notes,
+       l.assay_compensated, l.overage_pct, l.is_compensating, l.notes, c.assay_basis AS component_assay_basis,
        (SELECT b2.version FROM boms b2 WHERE b2.item_id = c.id AND b2.status = 'active') AS component_active_bom
   FROM bom_lines l JOIN items c ON c.id = l.component_item_id JOIN uoms u ON u.id = l.uom_id
  WHERE l.bom_id = %s ORDER BY l.line_no

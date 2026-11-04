@@ -130,8 +130,10 @@ function LotCheck({ bom, uoms }: { bom: Bom; uoms: Uom[] }) {
   const [lineId, setLineId] = useState(assayLines[0]?.id ?? "");
   const [assay, setAssay] = useState("99.2");
   const [lod, setLod] = useState("0.5");
-  const [basis, setBasis] = useState<"as_is" | "dried">("as_is");
   const line = assayLines.find((l) => l.id === lineId) ?? assayLines[0];
+  const [basisFor, setBasisFor] = useState<Record<string, "as_is" | "dried">>({});
+  const basis = (line && basisFor[line.id ?? ""]) ?? line?.component_assay_basis ?? "as_is";
+  const setBasis = (v: "as_is" | "dried") => line && setBasisFor({ ...basisFor, [line.id ?? ""]: v });
   if (!line) return <p className="small subtle">{t("boms.lotNoAssay")}</p>;
   const std = Number(line.quantity);
   const over = 1 + Number(line.overage_pct) / 100;

@@ -33,7 +33,7 @@ export interface ItemDetail extends ItemRow {
 export interface BomLine {
   id?: string; line_no?: number; component_item_id: string; component_code?: string; component_name_en?: string;
   component_name_ar?: string | null; component_type?: ItemType; quantity: number | string; uom_id: string; uom?: string;
-  assay_compensated: boolean; overage_pct: number | string; is_compensating: boolean; notes?: string | null;
+  assay_compensated: boolean; overage_pct: number | string; is_compensating: boolean; notes?: string | null; component_assay_basis?: "as_is" | "dried";
   component_active_bom?: number | null;
 }
 
