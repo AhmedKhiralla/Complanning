@@ -1167,3 +1167,10 @@ td.diag .mcell.own { box-shadow: inset 0 0 0 1.5px var(--brand-line); }
 .ai-input textarea:focus { outline: 2px solid var(--brand-solid); outline-offset: -1px; }
 .ai-foot { margin: 0; padding: 0 12px 10px; }
 @media (max-width: 640px) { .ai-panel { inset: 0; width: 100%; height: 100%; border-radius: 0; } .ai-fab { bottom: 14px; inset-inline-end: 14px; } }
+/* The assistant button never covers a form, dialog or the last row of a page. */
+body:has(.sheet) .ai-fab, body:has(.dialog) .ai-fab, body:has(.tour) .ai-fab { display: none; }
+body:has(.ai-fab) .content { padding-bottom: 96px; }
+@media (max-width: 640px) {
+  .ai-fab { width: 48px; height: 48px; padding: 0; justify-content: center; }
+  .ai-fab span { display: none; }
+}
