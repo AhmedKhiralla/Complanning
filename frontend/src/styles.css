@@ -1056,11 +1056,13 @@ td.diag .mcell.own { box-shadow: inset 0 0 0 1.5px var(--brand-line); }
 .warn-list li svg { flex: none; margin-top: 2px; color: var(--warn); }
 .warn-list li.w-unscheduled svg, .warn-list li.w-material_short svg { color: var(--danger); }
 .util-list { display: flex; flex-direction: column; gap: 10px; }
-.util-row { display: grid; grid-template-columns: 90px minmax(120px, 1fr) 54px minmax(0, 1.2fr); gap: 12px; align-items: center; }
+.util-row { display: grid; grid-template-columns: minmax(150px, 240px) minmax(120px, 1fr) 54px minmax(0, 1.2fr); gap: 12px; align-items: center; }
+.util-name { display: flex; flex-direction: column; min-width: 0; line-height: 1.3; }
+.util-name .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .util-bar { height: 10px; border-radius: 999px; background: var(--surface-3); overflow: hidden; display: flex; }
 .util-bar .busy { background: var(--brand); }
 .util-bar .co { background: var(--saffron); }
-@media (max-width: 720px) { .util-row { grid-template-columns: 70px 1fr 44px; } .util-row > .small { grid-column: 1 / -1; } .g-names { width: 110px; } .g-name span { display: none; } }
+@media (max-width: 720px) { .util-row { grid-template-columns: 120px 1fr 44px; } .util-row > .small { grid-column: 1 / -1; } .g-names { width: 110px; } .g-name span { display: none; } }
 @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } .kpi { min-height: 0; padding: 12px 14px; } .kpi strong { font-size: 20px; } }
 .no-pause { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text-2); }
 

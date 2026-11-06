@@ -560,9 +560,11 @@ export function PlanView({ planId }: { planId: string }) {
         {k.utilization.map((u) => {
           const busy = u.available_hours ? (u.busy_hours / u.available_hours) * 100 : 0;
           const co = u.available_hours ? (u.changeover_hours / u.available_hours) * 100 : 0;
+          const mach = p.machines.find((x) => x.id === u.machine_id);
           return (
             <div key={u.machine_id} className="util-row">
-              <span className="mono-id cell-main">{u.code}</span>
+              <span className="util-name"><span className="mono-id cell-main">{u.code}</span>
+                {mach && <span className="small muted" title={nameOf(mach, lang)}>{nameOf(mach, lang)}</span>}</span>
               <div className="util-bar" title={t("pv.utilBusy", { busy: qty(u.busy_hours, 0), co: qty(u.changeover_hours, 0), avail: qty(u.available_hours, 0) })}>
                 <span className="busy" style={{ width: `${Math.min(100, busy)}%` }} />
                 <span className="co" style={{ width: `${Math.min(100 - Math.min(100, busy), co)}%` }} />
