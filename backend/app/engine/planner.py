@@ -33,7 +33,7 @@ PRODUCED = ("wip", "semi_finished", "finished")
 USE_STOCK = {"finished": "use_stock_fg", "semi_finished": "use_stock_semi", "wip": "use_stock_wip"}
 EPS = 1e-6
 H = dt.timedelta(hours=1)
-ENGINE_VERSION = "complanning-1.2"
+ENGINE_VERSION = "complanning-1.3"
 
 # Weights per objective: due date (per hour), changeover (per hour), value density.
 WEIGHTS = {
@@ -1021,9 +1021,18 @@ class Scheduler:
             if d.quantity > EPS and not d.sources:
                 avail = avail or self.p.start
             late_h = ((avail - d.due_at).total_seconds() / 3600) if (ok and avail) else None
+            # On time in full: what is ready to ship by the due date, against what the market asked for.
+            on_time_qty = d.from_stock if d.from_stock > EPS and (d.stock_ready is None or d.stock_ready <= d.due_at) else 0.0
+            for b, q in d.sources:
+                dn = self.done.get(b.key)
+                if dn and dn["ship"] <= d.due_at:
+                    on_time_qty += q
+            on_time_qty = min(on_time_qty, d.quantity) if d.quantity > EPS else 0.0
+            in_full = d.requested > EPS and on_time_qty >= d.requested - max(EPS, d.requested * 1e-6)
             out.append({"row": d, "available": avail if ok else None, "fulfilled": ok and d.quantity > EPS,
                         "late_hours": max(0.0, late_h) if late_h is not None else None,
-                        "on_time": ok and d.quantity > EPS and (late_h is None or late_h <= 0)})
+                        "on_time": ok and d.quantity > EPS and (late_h is None or late_h <= 0),
+                        "on_time_qty": on_time_qty, "otif": in_full})
         return out
 
     def score(self) -> tuple:
@@ -1133,7 +1142,20 @@ def summarise(s: Scheduler, runtime_ms: int, runs: int) -> dict:
         "utilization": sorted(util, key=lambda u: -(u["utilization"] or 0)),
         "warnings": warnings, "runtime_ms": runtime_ms, "runs": runs, "engine": ENGINE_VERSION, "cost": cost,
         "rounded": sum(1 for x in active if x["row"].before_rounding is not None),
+        "otif": _otif(dem),
     }
+
+
+def _otif(dem: list[dict]) -> dict:
+    """On time in full: share of delivery lines shipped complete by their due date, and share of the quantity."""
+    lines = [x for x in dem if x["row"].requested > EPS]
+    requested = sum(x["row"].requested for x in lines)
+    on_time = sum(min(x["on_time_qty"], x["row"].requested) for x in lines)
+    otif = sum(1 for x in lines if x["otif"])
+    return {"lines": len(lines), "otif": otif, "pct": round(otif / len(lines) * 100, 1) if lines else None,
+            "requested": round(requested, 3), "on_time_qty": round(on_time, 3),
+            "qty_pct": round(on_time / requested * 100, 1) if requested > EPS else None,
+            "in_full": sum(1 for x in lines if x["row"].quantity >= x["row"].requested - EPS)}
 
 
 def batch_expiry(s: Scheduler, b: Batch) -> dt.date | None:

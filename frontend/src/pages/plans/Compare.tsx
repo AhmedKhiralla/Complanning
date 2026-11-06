@@ -36,6 +36,8 @@ export function ComparePlans() {
   const rows: Row[] = [
     { label: t("pv.kpi.onTime"), values: plans.map((p) => p.kpis?.on_time ?? null), better: "high",
       show: (v, p) => v === null ? "—" : `${v} / ${p.kpis?.demand_lines}` },
+    { label: t("pv.kpi.otif"), values: plans.map((p) => p.kpis?.otif?.pct ?? null), better: "high", show: (v) => v === null ? "—" : `${qty(v, 0)}%` },
+    { label: t("cmp.otifQty"), values: plans.map((p) => p.kpis?.otif?.qty_pct ?? null), better: "high", show: (v) => v === null ? "—" : `${qty(v, 1)}%` },
     { label: t("cmp.late"), values: plans.map((p) => p.kpis?.late ?? null), better: "low", show: (v) => v ?? "—" },
     { label: t("cmp.unfilled"), values: plans.map((p) => p.kpis?.unfilled ?? null), better: "low", show: (v) => v ?? "—" },
     { label: t("pv.kpi.batches"), values: plans.map((p) => p.kpis?.scheduled ?? null), better: null, show: (v) => v ?? "—" },

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
-  LuArchive, LuArchiveRestore, LuArrowLeft, LuSprayCan, LuLock, LuLockOpen, LuRefreshCw, LuSend, LuUndo2, LuChartGantt, LuCircleAlert, LuCircleCheck, LuEllipsis, LuFileSpreadsheet, LuPencil, LuReceipt, LuTrash2, LuX,
+  LuArchive, LuArchiveRestore, LuArrowLeft, LuSprayCan, LuLock, LuLockOpen, LuRefreshCw, LuSend, LuUndo2, LuChartGantt, LuCircleAlert, LuCircleCheck, LuEllipsis, LuFileSpreadsheet, LuPencil, LuReceipt, LuTarget, LuTrash2, LuX,
 } from "react-icons/lu";
 import {
   Badge, Button, Confirm, Dialog, Empty, LoadError, Menu, MenuItem, Notice, TextField, errorText, useLoad, useToast,
@@ -31,6 +31,7 @@ interface PDemand {
   id: string; item_id: string; code: string; name_en: string; name_ar: string | null; uom: string; market: string; month: string;
   due_date: string; requested: number; quantity: number; from_stock: number; batches: string | null; available_at: string | null;
   late_hours: number | null; on_time: boolean; before_rounding: number | null; units_per_shipper: number | null; pack_size: number | null;
+  on_time_qty: number | null;
 }
 interface PlanFull extends PlanRow {
   batches: PBatch[]; operations: POp[]; links: { supplier_id: string; consumer_id: string; quantity: number }[];
@@ -402,6 +403,7 @@ export function PlanView({ planId }: { planId: string }) {
     catch (e) { setErr(errorText(e, t)); }
   };
   const warnings = k.warnings ?? [];
+  const otif = otifOf(p.demand);
   const lateLabel = (h: number) => t("pv.st.late", { d: h >= 24 ? t("pv.nDays", { n: qty(h / 24, 1) }) : t("pv.nHours", { n: qty(h, 0) }) });
 
   return (
@@ -442,6 +444,9 @@ export function PlanView({ planId }: { planId: string }) {
       <div className="kpis" style={{ marginTop: 0 }}>
         <div className={`kpi ${k.late + k.unfilled ? "bad" : "good"}`}><span className="icon"><LuCircleCheck /></span><span className="k">{t("pv.kpi.onTime")}</span>
           <strong>{k.on_time} / {k.demand_lines}</strong><span className="small subtle">{k.on_time_pct !== null ? `${qty(k.on_time_pct, 0)}%` : ""}</span></div>
+        {otif && <div className={`kpi ${otif.pct === 100 ? "good" : "bad"}`}><span className="icon"><LuTarget /></span><span className="k">{t("pv.kpi.otif")}</span>
+          <strong>{otif.pct === null ? "—" : `${qty(otif.pct, 0)}%`}</strong>
+          <span className="small subtle">{t("pv.kpi.otifSub", { n: otif.otif, of: otif.lines, q: otif.qtyPct === null ? "—" : qty(otif.qtyPct, 1) })}</span></div>}
         <div className={`kpi ${k.unscheduled ? "bad" : ""}`}><span className="icon"><LuChartGantt /></span><span className="k">{t("pv.kpi.batches")}</span>
           <strong>{k.scheduled}</strong>{k.unscheduled > 0 && <span className="small text-danger">{t("pv.kpi.unscheduled", { n: k.unscheduled })}</span>}</div>
         <div className="kpi"><span className="icon"><LuSprayCan /></span><span className="k">{t("pv.kpi.co")}</span>
@@ -472,26 +477,53 @@ export function PlanView({ planId }: { planId: string }) {
         {selected && <BatchDetail plan={p} id={selected} tz={tz} onSelect={setSelected} editable={editable && !busy} onLock={lock} />}
       </>}
 
-      {tab === "deliveries" && <div className="panel"><div className="table-wrap"><table className="table">
-        <thead><tr><th>{t("pv.product")}</th><th>{t("pv.market")}</th><th>{t("pv.due")}</th><th className="num">{t("pv.planned")}</th>
-          <th className="num">{t("pv.fromStock")}</th><th>{t("pv.batchesCol")}</th><th>{t("pv.availableCol")}</th><th>{t("pv.status")}</th></tr></thead>
-        <tbody>{p.demand.map((d) => (
+      {tab === "deliveries" && <>
+        {otif?.unknown ? <Notice>{t("pv.otifOld")}</Notice> : null}
+        <div className="panel"><div className="table-wrap"><table className="table deliveries">
+        <thead><tr><th>{t("pv.product")}</th><th>{t("pv.market")}</th><th>{t("pv.due")}</th><th className="num">{t("pv.requested")}</th>
+          <th className="num">{t("pv.planned")}</th><th className="num">{t("pv.onTimeQty")}</th><th>{t("pv.batchesCol")}</th><th>{t("pv.availableCol")}</th><th>{t("pv.status")}</th>
+          <th>{t("pv.otif")}</th></tr></thead>
+        <tbody>{p.demand.map((d) => {
+          const req = Number(d.requested), planned = Number(d.quantity);
+          const otq = d.on_time_qty === null ? null : Number(d.on_time_qty);
+          const pct = otq === null || req <= 0 ? null : Math.min(100, (Math.min(otq, req) / req) * 100);
+          const full = otq !== null && req > 0 && otq >= req - 0.001;
+          return (
           <tr key={d.id}>
             <td><span className="mono-id cell-main">{d.code}</span><div className="small muted">{nameOf(d, lang)}</div></td>
             <td><Badge tone="brand">{d.market}</Badge></td>
             <td className="small num">{date(d.due_date, "UTC")}</td>
-            <td className="num">{qty(d.quantity, 0)} <span className="subtle small">{d.uom}</span>
+            <td className="num">{qty(req, 0)} <span className="subtle small">{d.uom}</span></td>
+            <td className="num">{qty(planned, 0)}
               {d.before_rounding !== null ? <div className="small subtle">{t("pv.rounded", { q: qty(d.before_rounding, 0) })}</div>
-                : Number(d.quantity) < Number(d.requested) && <div className="small text-warn">{qty(d.requested, 0)} · {t("pv.capped")}</div>}
-              {d.units_per_shipper ? <div className="small subtle">{t("pv.shippers", { n: qty(Number(d.quantity) / Number(d.units_per_shipper), 1) })}</div> : null}</td>
-            <td className="num">{Number(d.from_stock) > 0 ? qty(d.from_stock, 0) : <span className="subtle">—</span>}</td>
+                : planned < req && <div className="small text-warn">{t("pv.capped")}</div>}
+              {d.units_per_shipper ? <div className="small subtle">{t("pv.shippers", { n: qty(planned / Number(d.units_per_shipper), 1) })}</div> : null}
+              {Number(d.from_stock) > 0 && <div className="small subtle">{t("pv.fromStockN", { q: qty(d.from_stock, 0) })}</div>}</td>
+            <td className="num">{otq === null ? <span className="subtle">—</span> : <>
+              {qty(otq, 0)}
+              <div className="fill" title={t("pv.fillHint")}><span className="fill-bar"><i style={{ width: `${pct ?? 0}%` }} className={full ? "ok" : (pct ?? 0) > 0 ? "part" : "none"} /></span>
+                <span className="small">{pct === null ? "—" : `${qty(pct, pct >= 99.95 || pct < 1 ? 0 : 1)}%`}</span></div>
+              {planned - otq > 0.5 && <div className="small text-danger">{t("pv.lateN", { q: qty(planned - otq, 0) })}</div>}</>}</td>
             <td className="small mono-id">{d.batches ?? "—"}</td>
             <td className="small num">{d.available_at ? dateTime(d.available_at, tz) : "—"}</td>
             <td>{d.on_time ? <Badge tone="ok" dot>{t("pv.st.onTime")}</Badge> : d.available_at && d.late_hours !== null
               ? <Badge tone="danger" dot>{lateLabel(Number(d.late_hours))}</Badge> : <Badge tone="danger">{t("pv.st.unfilled")}</Badge>}</td>
-          </tr>
-        ))}</tbody>
-      </table></div></div>}
+            <td>{otq === null ? <span className="subtle">—</span> : full ? <Badge tone="ok">{t("pv.otifYes")}</Badge>
+              : <Badge tone="danger">{t(otq > 0 ? (d.on_time ? "pv.otifShort" : "pv.otifPart") : "pv.otifNo")}</Badge>}</td>
+          </tr>);
+        })}</tbody>
+        {otif && otif.sameUom && <tfoot><tr>
+          <td colSpan={3}><strong>{t("pv.total")}</strong></td>
+          <td className="num"><strong>{qty(otif.requested, 0)}</strong> <span className="subtle small">{otif.sameUom}</span></td>
+          <td className="num"><strong>{qty(otif.planned, 0)}</strong></td>
+          <td className="num"><strong>{qty(otif.onTime, 0)}</strong><div className="small subtle">{otif.qtyPct === null ? "" : `${qty(otif.qtyPct, 1)}%`}</div>
+            {otif.planned - otif.onTime > 0.5 && <div className="small text-danger">{t("pv.lateN", { q: qty(otif.planned - otif.onTime, 0) })}</div>}</td>
+          <td colSpan={3} />
+          <td><strong>{otif.otif} / {otif.lines}</strong></td>
+        </tr></tfoot>}
+      </table></div></div>
+        <p className="small subtle" style={{ marginTop: 8 }}>{t("pv.otifNote")}</p>
+      </>}
 
       {tab === "batches" && <div className="panel"><div className="table-wrap"><table className="table">
         <thead><tr><th>{t("pv.batch")}</th><th>{t("pv.item")}</th><th className="num">{t("pv.qty")}</th><th>{t("pv.start")}</th><th>{t("pv.end")}</th>
@@ -551,4 +583,25 @@ export function PlanView({ planId }: { planId: string }) {
         onConfirm={async () => { await del(`/api/plans/${p.id}`); toast(t("pv.deleted")); navigate("/plans"); }} />}
     </>
   );
+}
+
+
+/** On time in full: lines complete by their due date, and the share of the requested quantity ready on time. */
+function otifOf(rows: PDemand[]) {
+  const lines = rows.filter((d) => Number(d.requested) > 0);
+  if (!lines.length) return null;
+  const known = lines.filter((d) => d.on_time_qty !== null);
+  let requested = 0, planned = 0, onTime = 0, otif = 0;
+  for (const d of known) {
+    const req = Number(d.requested), otq = Number(d.on_time_qty);
+    requested += req; planned += Number(d.quantity); onTime += Math.min(otq, req);
+    if (otq >= req - 0.001) otif += 1;
+  }
+  const uoms = new Set(lines.map((d) => d.uom));
+  return {
+    lines: known.length, otif, unknown: lines.length - known.length,
+    pct: known.length ? (otif / known.length) * 100 : null,
+    qtyPct: requested > 0 ? (onTime / requested) * 100 : null,
+    requested, planned, onTime, sameUom: uoms.size === 1 && known.length === lines.length ? [...uoms][0] : null,
+  };
 }

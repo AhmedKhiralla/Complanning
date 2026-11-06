@@ -226,3 +226,23 @@ def test_steps_that_run_together(co):
     _, after, _ = a.get(f"/api/plans/{p['id']}")
     mine = [o for o in after["operations"] if o["batch_id"] == moved["focus"]]
     assert len(mine) == 2 and mine[0]["start_at"] == mine[1]["start_at"] and mine[0]["end_at"] == mine[1]["end_at"]
+
+
+def test_otif(plan):
+    """Each delivery carries the quantity ready by its due date; the plan has OTIF by lines and by quantity."""
+    o = plan["kpis"]["otif"]
+    rows = [d for d in plan["demand"] if float(d["requested"]) > 0]
+    assert o["lines"] == len(rows) and 0 <= o["otif"] <= o["lines"]
+    in_full = 0
+    total_req = total_ok = 0.0
+    for d in rows:
+        req, q, otq = float(d["requested"]), float(d["quantity"]), float(d["on_time_qty"])
+        assert 0 <= otq <= q + 1e-6
+        if d["on_time"]:
+            assert abs(otq - q) < 1e-3          # everything planned for an on-time line is ready by the due date
+        if otq >= req - 1e-3:
+            in_full += 1
+        total_req += req
+        total_ok += min(otq, req)
+    assert o["otif"] == in_full
+    assert o["qty_pct"] == round(total_ok / total_req * 100, 1)

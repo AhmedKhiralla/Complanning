@@ -1175,3 +1175,15 @@ body:has(.ai-fab) .content { padding-bottom: 96px; }
   .ai-fab { width: 48px; height: 48px; padding: 0; justify-content: center; }
   .ai-fab span { display: none; }
 }
+
+/* Deliveries: on-time fill per line. */
+.table.deliveries .fill { display: flex; align-items: center; gap: 6px; justify-content: flex-end; margin-top: 3px; color: var(--text-2); }
+.fill-bar { width: 56px; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; flex: none; }
+.fill-bar i { display: block; height: 100%; border-radius: 3px; }
+.fill-bar i.ok { background: var(--ok); } .fill-bar i.part { background: var(--warn); } .fill-bar i.none { background: transparent; }
+.table.deliveries tfoot td { border-top: 2px solid var(--line-strong); padding-top: 10px; font-variant-numeric: tabular-nums; }
+.table.deliveries th, .table.deliveries td { padding-inline: 9px; }
+.table.deliveries th, .table.deliveries td.num, .table.deliveries .mono-id.cell-main, .table.deliveries td:nth-child(3) { white-space: nowrap; }
+.table.deliveries td:first-child .muted { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.table.deliveries td:nth-child(5) .small { white-space: normal; min-width: 120px; }
+.table.deliveries td:nth-child(8) { white-space: normal; min-width: 96px; }

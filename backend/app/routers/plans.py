@@ -142,13 +142,22 @@ def _store(call: Call, pid, model, sched) -> dict:
         d = x["row"]
         call.tx.x(
             "INSERT INTO plan_demand (tenant_id, plan_id, demand_line_id, item_id, market_id, month, due_date, requested, quantity,"
-            " from_stock, batches, available_at, late_hours, on_time, price, currency, before_rounding)"
-            " VALUES (%s, %s, %s::uuid, %s::uuid, %s::uuid, %s, %s, %s, %s, %s, string_to_array(%s, ','), %s, %s, %s, %s, %s, %s)",
+            " from_stock, batches, available_at, late_hours, on_time, price, currency, before_rounding, on_time_qty)"
+            " VALUES (%s, %s, %s::uuid, %s::uuid, %s::uuid, %s, %s, %s, %s, %s, string_to_array(%s, ','), %s, %s, %s, %s, %s, %s, %s)",
             call.tenant_id, pid, d.line_id, d.item_id, d.market_id, d.month, d.due_date, round(d.requested, 3), round(d.quantity, 3),
             round(d.from_stock, 3), ",".join(numbers[b.key] for b, _ in d.sources) or None, as_utc(x["available"]),
             round(x["late_hours"], 1) if x["late_hours"] is not None else None, bool(x["on_time"]), d.price, d.currency,
-            round(d.before_rounding, 3) if d.before_rounding is not None else None)
+            round(d.before_rounding, 3) if d.before_rounding is not None else None, round(x["on_time_qty"], 3))
     return keys
+
+
+def _otif_cells(d: dict) -> list:
+    """On time quantity, late quantity, % of the request on time, and whether the line is on time in full."""
+    if d["on_time_qty"] is None:
+        return [None, None, None, None]
+    req, otq = float(d["requested"]), float(d["on_time_qty"])
+    pct = round(min(otq, req) / req * 100, 1) if req > 0 else None
+    return [otq, round(max(0.0, float(d["quantity"]) - otq), 3), pct, "yes" if req > 0 and otq >= req - 0.001 else "no"]
 
 
 def _json(o):
@@ -176,7 +185,7 @@ def get_plan(call: Call):
     p["demand"] = call.tx.q(
         "SELECT d.id, d.item_id, i.code, i.name_en, i.name_ar, u.code AS uom, d.market_id, m.code AS market, d.month, d.due_date,"
         " d.requested, d.quantity, d.from_stock, array_to_string(d.batches, ', ') AS batches, d.available_at, d.late_hours, d.on_time, d.price, d.currency,"
-        " d.before_rounding, i.units_per_shipper, i.pack_size"
+        " d.before_rounding, d.on_time_qty, i.units_per_shipper, i.pack_size"
         "  FROM plan_demand d JOIN items i ON i.id = d.item_id JOIN uoms u ON u.id = i.stock_uom_id JOIN markets m ON m.id = d.market_id"
         " WHERE d.plan_id = %s ORDER BY d.due_date, i.code, m.code", pid)
     eligible: dict[tuple, list] = {}
@@ -344,6 +353,10 @@ def export_plan(call: Call):
                 ("Times shown in", tz), ("Batches", k.get("batches")), ("On-time deliveries", f"{k.get('on_time')} of {k.get('demand_lines')}"),
                 ("Changeover hours", k.get("changeover_hours")), ("Created by", p["created_by_name"]), ("Engine", k.get("engine"))):
         ws.append(list(row))
+    if k.get("otif"):
+        o = k["otif"]
+        ws.append(["OTIF (lines on time in full)", f"{o['otif']} of {o['lines']} ({o['pct']}%)" if o["pct"] is not None else "—"])
+        ws.append(["OTIF quantity (% of requested on time)", o["qty_pct"]])
     if k.get("cost"):
         c = k["cost"]
         for row in ((f"Material cost ({c['currency']})", c["materials"]), (f"Standard cost of deliveries ({c['currency']})", c["deliveries"]),
@@ -374,7 +387,7 @@ def export_plan(call: Call):
 
     ws = wb.create_sheet("Deliveries")
     ws.append(["Product", "Market", "Due", "Requested", "Planned", "Shippers", "Units", "From stock", "Batches", "Available",
-               "On time", "Late (h)"])
+               "On time", "Late (h)", "On time qty", "Late qty", "Fill on time (%)", "OTIF"])
     for d in call.tx.q("SELECT d.*, array_to_string(d.batches, ', ') AS batch_list, i.code, i.units_per_shipper, i.pack_size,"
                        " m.code AS market FROM plan_demand d JOIN items i ON i.id = d.item_id"
                        " JOIN markets m ON m.id = d.market_id WHERE d.plan_id = %s ORDER BY d.due_date, i.code", p["id"]):
@@ -383,7 +396,7 @@ def export_plan(call: Call):
                    round(float(d["quantity"]) / ups, 2) if ups else None, float(d["quantity"] * pack) if pack else None,
                    float(d["from_stock"]),
                    d["batch_list"], local(d["available_at"]), "yes" if d["on_time"] else "no",
-                   float(d["late_hours"]) if d["late_hours"] is not None else None])
+                   float(d["late_hours"]) if d["late_hours"] is not None else None, *_otif_cells(d)])
     _style_header(ws); _autosize(ws)
     stamp = call.tx.val("SELECT to_char(now(), 'YYYYMMDD-HH24MI')")
     return _xlsx(wb, f"complanning-plan-{site['code']}-{stamp}.xlsx", call, "plans")

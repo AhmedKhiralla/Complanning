@@ -559,6 +559,7 @@ With enough capacity all three often give the same result. They differ when mach
 | Measure | Meaning |
 | --- | --- |
 | On-time deliveries | Sales plan lines available by their due date, out of all lines in the horizon. Red when any is late or not planned. |
+| OTIF (on time in full) | Share of sales plan lines whose whole requested quantity is ready to ship by the due date, with the number of lines and the share of all requested quantity that is ready on time. A line capped at the sales limit or rounded down to full shippers is not in full. |
 | Batches scheduled | Batches placed; any not scheduled are counted beneath in red. |
 | Changeover time | Cleaning, format change and results waiting across all machines, with the number of changeovers. |
 | Sales value on time | Value of on-time deliveries at the plan-date price, of the total value due, per currency. |
@@ -567,12 +568,12 @@ With enough capacity all three often give the same result. They differ when mach
 Tabs:
 
 - **Schedule:** one row per machine, grouped by area. Coloured bars are steps, coloured by cleaning group; lighter shades are lower levels (WIP lighter than finished). Grey hatching is cleaning and format change, orange hatching is waiting for results, red hatching is planned downtime. Fridays (non-working days) are shaded. **Month, Week, Day** zoom. Hover a bar for its details; click it to highlight the batch and every batch linked to it, and to open its details below: steps, machines, changeovers, times, what it is made from, what it is used in and which deliveries it serves.
-- **Deliveries:** each sales plan line with planned quantity (and the cut, if capped), stock used, batches, when it is available and its status: **On time**, **Late** by hours or days, or **Not planned**.
+- **Deliveries:** each sales plan line with the **Requested** quantity, the **Planned** quantity (and the cut, if capped or rounded; stock used), the quantity **Ready by due date** with a fill bar and percentage and the late quantity, the batches, when it is available, its status (**On time**, **Late** by hours or days, or **Not planned**) and **OTIF**: **Yes** when the whole request is ready by the due date, **Partial** when only part is, **Short** when it is on time but less than requested, **No** when nothing is ready in time. A total row adds up the quantities when all lines use the same unit.
 - **Batches:** batch numbers (B001 onwards, in start order), quantities, start, end and release times. Click one to see it on the schedule.
 - **Warnings:** everything the plan could not satisfy (11.4).
 - **Machines:** use of each machine in the horizon, production and changeover hours against available hours.
 
-**Export to Excel** saves the plan, batches, machine schedule and deliveries, with your name and the export time.
+**Export to Excel** saves the plan (with the OTIF scores), batches, machine schedule and deliveries (with on-time quantity, late quantity, fill % and OTIF per line), with your name and the export time.
 
 ### 11.4 Warnings
 

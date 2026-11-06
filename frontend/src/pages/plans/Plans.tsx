@@ -17,6 +17,7 @@ export interface PlanRow {
     batches: number; scheduled: number; unscheduled: number; demand_lines: number; on_time: number; late: number; unfilled: number;
     on_time_pct: number | null; changeover_hours: number; changeovers: number; finish: string | null; runtime_ms: number; runs: number;
     value: { currency: string; requested: number; on_time: number }[]; warnings: Warning[]; rounded?: number;
+    otif?: { lines: number; otif: number; pct: number | null; requested: number; on_time_qty: number; qty_pct: number | null; in_full: number };
     cost?: { currency: string; materials: number; deliveries: number; margin: number; missing: string[] } | null;
     utilization: { machine_id: string; code: string; available_hours: number; busy_hours: number; changeover_hours: number; utilization: number | null }[];
   };
