@@ -7,6 +7,7 @@ import { useI18n } from "../../lib/i18n";
 import { Link, navigate } from "../../lib/router";
 import { usePerms } from "../../lib/session";
 import { nameOf, type ItemType, type Resource, type Step } from "../../lib/types";
+import { NumInput } from "../../components/numinput";
 
 interface RoutingRow {
   item_id: string; code: string; name_en: string; name_ar: string | null; type: ItemType; routing_id: string | null;
@@ -225,7 +226,7 @@ export function RoutingEditor({ itemId }: { itemId: string }) {
                         </div>
                         <label className="mini">
                           <span>{s.time_model === "fixed" ? t("routings.minutes") : t("routings.ratePer", { uom: d.item.stock_uom })}</span>
-                          <input className="input num" type="number" min="0" step="any" disabled={!canEdit}
+                          <NumInput className="input num" disabled={!canEdit}
                             value={str(s.time_model === "fixed" ? s.fixed_minutes : s.rate_per_hour)}
                             onChange={(e) => update(s.key, (x) => s.time_model === "fixed"
                               ? { ...x, fixed_minutes: e.target.value === "" ? null : Number(e.target.value) }
@@ -233,7 +234,7 @@ export function RoutingEditor({ itemId }: { itemId: string }) {
                         </label>
                         <label className="mini">
                           <span>{t("routings.setup")}</span>
-                          <input className="input num" type="number" min="0" step="any" disabled={!canEdit} value={str(s.setup_minutes)}
+                          <NumInput className="input num" disabled={!canEdit} value={str(s.setup_minutes)}
                             onChange={(e) => update(s.key, (x) => ({ ...x, setup_minutes: Number(e.target.value || 0) }))} />
                         </label>
                         <div className="no-pause" title={t("routings.uninterruptedHint")}>
@@ -263,7 +264,7 @@ export function RoutingEditor({ itemId }: { itemId: string }) {
                                 <LuStar />
                               </button>
                               <span className="mslot-name"><span className="mono-id">{m?.code ?? "?"}</span><span className="pname">{m ? nameOf(m, lang) : ""}</span></span>
-                              <input className="input num own" type="number" min="0" step="any" dir="ltr" disabled={!canEdit}
+                              <NumInput className="input num own" dir="ltr" disabled={!canEdit}
                                 placeholder={s.time_model === "fixed" ? "min" : "/h"}
                                 title={s.time_model === "fixed" ? t("routings.ownMinutes") : t("routings.ownSpeed")}
                                 aria-label={`${m?.code ?? ""} ${s.time_model === "fixed" ? t("routings.ownMinutes") : t("routings.ownSpeed")}`}

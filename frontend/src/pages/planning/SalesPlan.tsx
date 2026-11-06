@@ -8,6 +8,7 @@ import { get, post, put, qs } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { usePerms } from "../../lib/session";
 import { useFeature } from "../../components/rules";
+import { NumInput } from "../../components/numinput";
 
 interface Cell { id: string; quantity: number; due_date: string | null; notes: string | null; }
 interface Row {
@@ -193,7 +194,7 @@ export function SalesPlan() {
                               return (
                                 <td key={m} className={`pcell ${dirty ? "dirty" : ""} ${over ? "over" : ""} ${cellErr.has(k) ? "bad" : ""}`}>
                                   <div className="pcell-in">
-                                    <input className="input num" type="number" min={0} step="any" inputMode="decimal" disabled={!canEdit}
+                                    <NumInput className="input num" disabled={!canEdit}
                                       value={c.quantity} placeholder="–" aria-label={`${r.code} ${r.market} ${fmtMonth(m)}`}
                                       title={over ? t("sales.overLimit", { n: qty(r.max_qty, 0) }) : c.due_date ? t("sales.dueOn", { date: date(c.due_date, "UTC") }) : undefined}
                                       onChange={(e) => set(r, m, { quantity: e.target.value })} />

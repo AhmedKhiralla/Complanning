@@ -288,7 +288,7 @@ A bill of materials (BOM) says what one batch of a produced item consumes and ho
 | Archived | A former active version, kept for history | No |
 
 - **New bill of materials** (or **New version** on an item that has one) creates a draft, copied from the active version when there is one.
-- **Activate** asks for a **Valid from** date. The draft becomes active; the previous active version is archived and ends the day before.
+- **Activate** asks for a **Valid from** date. The draft becomes active; the previous active version is archived and ends the day before. The date can be the same day the previous version started (the new version replaces it that day), but not earlier; if it is, the dialog stays open and says which date to choose.
 - **Discard draft** removes a draft that was never activated.
 
 Impact: planning, net requirements and plans always use the active version. Editing a draft changes nothing until it is activated, so QA can prepare a change safely.

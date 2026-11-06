@@ -7,6 +7,7 @@ import { get, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { usePerms } from "../../lib/session";
 import { nameOf } from "../../lib/types";
+import { NumInput } from "../../components/numinput";
 
 interface Row { cleaning_group: string; min: string; max: string; qc: string; atRisk: boolean; testSale: boolean; }
 const toRow = (i: ItemTimes): Row => ({ cleaning_group: i.cleaning_group ?? "", min: str(i.hold_min_hours), max: str(i.hold_max_hours),
@@ -97,10 +98,10 @@ export function ItemTimesPage() {
                           </select>
                         </td>
                         {show.hold && <>
-                          <td className="num"><input className="input num cell-input" type="number" min={0} step="any" disabled={ro} aria-label={`${i.code} ${t("times.minWait")}`} value={r.min} onChange={(e) => set(i.id, { min: e.target.value })} /></td>
-                          <td className="num"><input className="input num cell-input" type="number" min={0} step="any" disabled={ro} aria-label={`${i.code} ${t("times.maxHold")}`} value={r.max} onChange={(e) => set(i.id, { max: e.target.value })} /></td>
+                          <td className="num"><NumInput className="input num cell-input" disabled={ro} aria-label={`${i.code} ${t("times.minWait")}`} value={r.min} onChange={(e) => set(i.id, { min: e.target.value })} /></td>
+                          <td className="num"><NumInput className="input num cell-input" disabled={ro} aria-label={`${i.code} ${t("times.maxHold")}`} value={r.max} onChange={(e) => set(i.id, { max: e.target.value })} /></td>
                         </>}
-                        {show.qc && <td className="num"><input className="input num cell-input" type="number" min={0} step="any" disabled={ro} aria-label={`${i.code} ${t("times.qc")}`} value={r.qc} onChange={(e) => set(i.id, { qc: e.target.value })} /></td>}
+                        {show.qc && <td className="num"><NumInput className="input num cell-input" disabled={ro} aria-label={`${i.code} ${t("times.qc")}`} value={r.qc} onChange={(e) => set(i.id, { qc: e.target.value })} /></td>}
                         {show.risk && <td className="center"><Switch label={`${i.code} ${t("times.atRisk")}`} checked={r.atRisk} disabled={ro} onChange={(v) => set(i.id, { atRisk: v })} /></td>}
                         <td className="center">{i.type === "finished" ? <Switch label={`${i.code} ${t("times.testSale")}`} checked={r.testSale} disabled={ro} onChange={(v) => set(i.id, { testSale: v })} /> : <span className="subtle">—</span>}</td>
                       </tr>,

@@ -6,6 +6,7 @@ import { navigate } from "../lib/router";
 import { useI18n } from "../lib/i18n";
 import type { ItemType, Market, Uom } from "../lib/types";
 import { Badge, Button, Confirm, Dialog, Field, Menu, Notice, errorText, useLoad, useToast } from "./ui";
+import { NumInput } from "./numinput";
 
 export function TypeBadge({ type }: { type: ItemType }) {
   const { tx } = useI18n();
@@ -21,9 +22,8 @@ export function NumberField({ label, hint, error, value, onChange, disabled, suf
     <Field label={label} hint={hint} error={error}>
       {(id, describedBy) => (
         <div className="input-suffix">
-          <input id={id} className="input num" type="number" inputMode="decimal" step={step} min={min} value={value}
-            disabled={disabled} required={required} aria-invalid={!!error} aria-describedby={describedBy}
-            onChange={(e) => onChange(e.target.value)} />
+          <NumInput id={id} value={value} disabled={disabled} required={required} aria-invalid={!!error} aria-describedby={describedBy}
+            data-min={min} data-step={step} onChange={(e) => onChange(e.target.value)} />
           {suffix && <span className="suffix">{suffix}</span>}
         </div>
       )}

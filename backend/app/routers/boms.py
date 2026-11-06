@@ -230,10 +230,13 @@ def activate_bom(call: Call):
     start = call.body.valid_from or call.tx.val("SELECT current_date")
     prev = call.tx.one("SELECT id, valid_from FROM boms WHERE item_id = %s AND status = 'active'", bom["item_id"])
     if prev:
-        if prev["valid_from"] and start <= prev["valid_from"]:
-            raise ApiError(422, "invalid", "Some fields need attention.",
-                           fields={"valid_from": f"Must be after the current version's start ({prev['valid_from'].isoformat()})."})
-        call.tx.x("UPDATE boms SET status = 'archived', valid_to = %s WHERE id = %s", start - dt.timedelta(days=1), prev["id"])
+        if prev["valid_from"] and start < prev["valid_from"]:
+            raise ApiError(422, "invalid", f"This version cannot start before the current version's start "
+                           f"({prev['valid_from'].isoformat()}).",
+                           fields={"valid_from": f"Choose {prev['valid_from'].isoformat()} or later."})
+        # A new version on the same day replaces the current one from that day.
+        ends = max(start - dt.timedelta(days=1), prev["valid_from"]) if prev["valid_from"] else start - dt.timedelta(days=1)
+        call.tx.x("UPDATE boms SET status = 'archived', valid_to = %s WHERE id = %s", ends, prev["id"])
     call.tx.x("UPDATE boms SET status = 'active', valid_from = %s WHERE id = %s::uuid", start, bid)
     return _bom(call, bid)
 

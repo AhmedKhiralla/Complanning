@@ -11,6 +11,7 @@ import { Link, navigate } from "../../lib/router";
 import { usePerms } from "../../lib/session";
 import { useFeature } from "../../components/rules";
 import { nameOf, type Bom, type BomLine, type BomListRow, type ExplodeNode, type ItemDetail, type ItemRow, type ItemType, type Uom } from "../../lib/types";
+import { NumInput } from "../../components/numinput";
 
 const LEVELS: ItemType[] = ["finished", "semi_finished", "wip"];
 
@@ -190,6 +191,7 @@ export function BomEditor({ itemId }: { itemId: string }) {
   const [header, setHeader] = useState({ batch_size: "", batch_uom_id: "", yield_pct: "100", batch_mode: "fixed", min_batch_pct: "", notes: "" });
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [general, setGeneral] = useState<string | null>(null);
+  const [actErr, setActErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [activating, setActivating] = useState<string | null>(null);
   const [discarding, setDiscarding] = useState(false);
@@ -308,7 +310,7 @@ export function BomEditor({ itemId }: { itemId: string }) {
           {!hasDraft && <Button icon={<LuCopyPlus />} busy={busy === "create"} onClick={createVersion}>{t("boms.newVersion")}</Button>}
           {draft && <Button variant="ghost" icon={<LuTrash2 />} onClick={() => setDiscarding(true)}>{t("boms.discard")}</Button>}
           {draft && <Button variant="primary" icon={<LuCirclePlay />} disabled={dirty || lines.length === 0}
-            onClick={() => setActivating(new Date().toISOString().slice(0, 10))}>{t("boms.activate")}</Button>}
+            onClick={() => { const n = new Date(); setActErr(null); setActivating(new Date(n.getTime() - n.getTimezoneOffset() * 60000).toISOString().slice(0, 10)); }}>{t("boms.activate")}</Button>}
         </> : undefined} />
       <ReadOnlyNote show={!editCompany} />
 
@@ -383,7 +385,7 @@ export function BomEditor({ itemId }: { itemId: string }) {
                             )}
                           </td>
                           <td className="num" style={{ width: 130 }}>{canEdit
-                            ? <input className="input num" type="number" min="0" step="any" value={l.quantity} aria-label={t("boms.qty")} onChange={(e) => setLine(l.key, { quantity: e.target.value })} />
+                            ? <NumInput className="input num" value={l.quantity} aria-label={t("boms.qty")} onChange={(e) => setLine(l.key, { quantity: e.target.value })} />
                             : qty(l.quantity, 4)}</td>
                           <td style={{ width: 100 }}>{canEdit
                             ? <select className="select" value={l.uom_id} aria-label={t("boms.unit")} onChange={(e) => setLine(l.key, { uom_id: e.target.value })}>
@@ -392,7 +394,7 @@ export function BomEditor({ itemId }: { itemId: string }) {
                           {showA && <td className="center"><input type="checkbox" className="cb" checked={l.assay_compensated} disabled={!canEdit || l.is_compensating}
                             aria-label={t("boms.assay")} onChange={(e) => setLine(l.key, { assay_compensated: e.target.checked })} /></td>}
                           {showO && <td className="num" style={{ width: 96 }}>{canEdit
-                            ? <input className="input num" type="number" min="0" max="100" step="any" value={l.overage_pct} aria-label={t("boms.overage")} onChange={(e) => setLine(l.key, { overage_pct: e.target.value })} />
+                            ? <NumInput className="input num" value={l.overage_pct} aria-label={t("boms.overage")} onChange={(e) => setLine(l.key, { overage_pct: e.target.value })} />
                             : Number(l.overage_pct) > 0 ? `${qty(l.overage_pct, 2)}%` : <span className="subtle">—</span>}</td>}
                           {showC && <td className="center"><input type="radio" className="cb" name="compensating" checked={l.is_compensating} disabled={!canEdit}
                             aria-label={t("boms.compensating")} onChange={() => setLine(l.key, { is_compensating: true })}
@@ -434,11 +436,17 @@ export function BomEditor({ itemId }: { itemId: string }) {
           <Button onClick={() => setActivating(null)}>{t("common.cancel")}</Button>
           <Button variant="primary" busy={busy === "activate"} onClick={async () => {
             setBusy("activate");
+            setActErr(null);
             try { await post(`/api/boms/${b.id}/activate`, { valid_from: activating }); toast(t("boms.activatedToast")); setActivating(null); refreshAll(); }
-            catch (e) { fail(e); setActivating(null); } finally { setBusy(null); }
+            catch (e) {
+              // Keep the dialog open and say what is wrong, next to the field it concerns.
+              if (e instanceof ApiError && e.fields.valid_from) setActErr(e.fields.valid_from);
+              else { fail(e); setActivating(null); }
+              if (e instanceof ApiError && e.fields.valid_from) setGeneral(null);
+            } finally { setBusy(null); }
           }}>{t("boms.activate")}</Button></>}>
           <p>{t("boms.activateBody")}</p>
-          <TextField label={t("boms.validFrom")} type="date" value={activating} onChange={setActivating} />
+          <TextField label={t("boms.validFrom")} type="date" value={activating} onChange={(v) => { setActivating(v); setActErr(null); }} error={actErr ?? undefined} />
         </Dialog>
       )}
       {discarding && b && <Confirm danger title={t("boms.discardTitle", { v: b.version })} body={t("boms.discardBody")} confirmLabel={t("boms.discard")}

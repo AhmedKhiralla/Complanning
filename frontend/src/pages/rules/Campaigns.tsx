@@ -9,6 +9,7 @@ import { del, get, patch, post, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { usePerms } from "../../lib/session";
 import { nameOf, type ItemType, type Resource } from "../../lib/types";
+import { NumInput } from "../../components/numinput";
 
 interface Campaign {
   id: string; item_id: string; item_code: string; item_name_en: string; item_name_ar: string | null; item_type: ItemType;
@@ -103,9 +104,9 @@ function EquipmentHolds({ siteId, canEdit }: { siteId: string; canEdit: boolean 
                       <td className="mono-id cell-main" dir="ltr" style={{ textAlign: "start" }}>{m.code}</td>
                       <td>{nameOf(m, lang)}</td>
                       <td className="muted small">{m.area}</td>
-                      <td className="num"><input className="input num cell-input" type="number" min={0} step="any" inputMode="decimal" disabled={!canEdit}
+                      <td className="num"><NumInput className="input num cell-input" disabled={!canEdit}
                         aria-label={`${m.code} ${t("holds.dirty")}`} value={rows[m.id]?.dirty ?? ""} onChange={(e) => set(m.id, "dirty", e.target.value)} /></td>
-                      <td className="num"><input className="input num cell-input" type="number" min={0} step="any" inputMode="decimal" disabled={!canEdit}
+                      <td className="num"><NumInput className="input num cell-input" disabled={!canEdit}
                         aria-label={`${m.code} ${t("holds.clean")}`} value={rows[m.id]?.clean ?? ""} onChange={(e) => set(m.id, "clean", e.target.value)} /></td>
                     </tr>
                   ))}

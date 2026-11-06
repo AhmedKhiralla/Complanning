@@ -123,6 +123,15 @@ def test_active_bom_frozen_and_new_version(pharma, db_url):
     _, audit, _ = admin.get(f"/api/audit?entity=bom_lines&action=UPDATE")
     change = next(e for e in audit["items"] if e["new_values"].get("quantity") == 26)
     assert change["old_values"]["quantity"] == 25
+    # A third version may start the same day as the current one (it replaces it); an earlier day is refused.
+    status, v3, _ = admin.post(f"/api/items/{item['id']}/boms", {"batch_size": 300, "batch_uom_id": blend["batch_uom_id"]})
+    assert status == 200 and v3["version"] == 3
+    status, err, _ = admin.post(f"/api/boms/{v3['id']}/activate", {"valid_from": "2026-12-31"})
+    assert status == 422 and "valid_from" in err["error"]["fields"] and "2027-01-01" in err["error"]["message"]
+    status, act3, _ = admin.post(f"/api/boms/{v3['id']}/activate", {"valid_from": "2027-01-01"})
+    assert status == 200 and act3["status"] == "active"
+    _, v2, _ = admin.get(f"/api/boms/{draft['id']}")
+    assert v2["status"] == "archived" and v2["valid_to"] == "2027-01-01"
 
 
 def test_routing_save_and_single_preferred(pharma):

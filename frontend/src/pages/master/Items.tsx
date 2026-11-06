@@ -11,6 +11,7 @@ import { navigate } from "../../lib/router";
 import { usePerms, useSession } from "../../lib/session";
 import { useFeature, type CleaningGroup } from "../../components/rules";
 import { ITEM_TYPES, PRODUCIBLE, nameOf, type ItemDetail, type ItemRow, type ItemType, type Uom } from "../../lib/types";
+import { NumInput } from "../../components/numinput";
 
 type Tab = "general" | "planning" | "units" | "markets" | "usage";
 
@@ -49,7 +50,7 @@ function UnitsTab({ item, uoms, canEdit, onSaved }: { item: ItemDetail; uoms: Uo
             {options.map((u) => <option key={u.id} value={u.id}>{u.code} · {nameOf(u, lang)}</option>)}
           </select>
           <span className="muted small">{t("items.conv.equals")}</span>
-          <input className="input num" type="number" step="any" min="0" value={r.factor} disabled={!canEdit} aria-label={item.stock_uom}
+          <NumInput className="input num" value={r.factor} disabled={!canEdit} aria-label={item.stock_uom}
             onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, factor: e.target.value } : x)))} />
           <span className="mono-id">{item.stock_uom}</span>
           {canEdit && <Button variant="ghost" iconOnly size="sm" aria-label={t("common.remove")} icon={<LuTrash2 />}
@@ -116,9 +117,9 @@ function MarketsTab({ item, canEdit, onSaved }: { item: ItemDetail; canEdit: boo
                     <option value="">—</option>
                     {mk.map((m) => <option key={m.id} value={m.id}>{m.code} · {nameOf(m, lang)}</option>)}
                   </select></td>
-                  <td><input className="input num" type="number" min="0" step="any" value={r.max} disabled={!canEdit} aria-label={t("items.mk.maxPerMonth")}
+                  <td><NumInput className="input num" value={r.max} disabled={!canEdit} aria-label={t("items.mk.maxPerMonth")}
                     onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, max: e.target.value } : x)))} /></td>
-                  <td><input className="input num" type="number" min="0" max="100" step="any" value={r.shelf} disabled={!canEdit} aria-label={t("items.mk.minShelf")}
+                  <td><NumInput className="input num" value={r.shelf} disabled={!canEdit} aria-label={t("items.mk.minShelf")}
                     onChange={(e) => setRows(rows.map((x, j) => (j === i ? { ...x, shelf: e.target.value } : x)))} /></td>
                   <td className="actions">{canEdit && <Button variant="ghost" iconOnly size="sm" aria-label={t("common.remove")} icon={<LuTrash2 />} onClick={() => setRows(rows.filter((_, j) => j !== i))} />}</td>
                 </tr>
