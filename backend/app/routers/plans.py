@@ -138,6 +138,9 @@ def _store(call: Call, pid, model, sched) -> dict:
         for sup, q in bt.suppliers:
             call.tx.x("INSERT INTO plan_links (tenant_id, plan_id, supplier_id, consumer_id, quantity) VALUES (%s, %s, %s, %s, %s)",
                       call.tenant_id, pid, ids[sup.key], ids[bt.key], round(q, 3))
+    # Batch numbers the planner gave, kept by item and ordinal across re-planning.
+    call.tx.x("UPDATE plan_batches b SET lot_no = p.batch_numbers ->> (b.item_id::text || ':' || b.ordinal)"
+              " FROM plans p WHERE p.id = b.plan_id AND b.plan_id = %s", pid)
     for x in sched.evaluate_demand():
         d = x["row"]
         call.tx.x(
@@ -174,7 +177,7 @@ def get_plan(call: Call):
     p["batches"] = call.tx.q(
         "SELECT b.id, b.batch_no, b.item_id, i.code, i.name_en, i.name_ar, i.type, i.cleaning_group, u.code AS uom, b.level, b.quantity,"
         " b.bom_version, b.need_by, b.start_at, b.end_at, b.available_at, b.ship_at, b.status, b.problem, b.value, b.currency,"
-        " b.ordinal, b.locked, b.expires_on, b.material_cost"
+        " b.ordinal, b.locked, b.expires_on, b.material_cost, b.lot_no"
         "  FROM plan_batches b JOIN items i ON i.id = b.item_id JOIN uoms u ON u.id = i.stock_uom_id"
         " WHERE b.plan_id = %s ORDER BY b.batch_no", pid)
     p["operations"] = call.tx.q(

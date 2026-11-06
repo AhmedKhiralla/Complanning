@@ -13,13 +13,14 @@ import { Link, navigate } from "../../lib/router";
 import { usePerms, useSession } from "../../lib/session";
 import { nameOf, type ItemType } from "../../lib/types";
 import { OBJ_ICON, type PlanRow, type Warning } from "./Plans";
+import { PlanOrders } from "../orders/PlanOrders";
 
 interface PBatch {
   id: string; batch_no: string; item_id: string; code: string; name_en: string; name_ar: string | null; type: ItemType;
   cleaning_group: string | null; uom: string; level: number; quantity: number; bom_version: number | null; need_by: string | null;
   start_at: string | null; end_at: string | null; available_at: string | null; ship_at: string | null;
   status: "scheduled" | "unscheduled"; problem: string | null; value: number | null; currency: string | null;
-  ordinal: number; locked: boolean; expires_on: string | null; material_cost: number | null;
+  ordinal: number; locked: boolean; expires_on: string | null; material_cost: number | null; lot_no?: string | null;
 }
 interface POp {
   id: string; batch_id: string; seq: number; step_name: string; resource_id: string; changeover_start: string | null;
@@ -366,7 +367,7 @@ export function PlanView({ planId }: { planId: string }) {
   const toast = useToast();
   const dur = useDuration();
   const data = useLoad(() => get<PlanFull>(`/api/plans/${planId}`), [planId]);
-  const [tab, setTab] = useState<"gantt" | "deliveries" | "batches" | "warnings" | "machines">("gantt");
+  const [tab, setTab] = useState<"gantt" | "deliveries" | "batches" | "orders" | "warnings" | "machines">("gantt");
   const [selected, setSelected] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -465,7 +466,7 @@ export function PlanView({ planId }: { planId: string }) {
       </div>
 
       <div className="tabs" role="tablist" style={{ marginTop: 20 }}>
-        {(["gantt", "deliveries", "batches", "warnings", "machines"] as const).map((x) => (
+        {(["gantt", "deliveries", "batches", "orders", "warnings", "machines"] as const).map((x) => (
           <button key={x} type="button" role="tab" className="tab" aria-selected={tab === x} onClick={() => setTab(x)}>
             {t(`pv.tab.${x}` as never)}{x === "warnings" && warnings.length > 0 && <Badge tone="warn"> {warnings.length}</Badge>}
           </button>
@@ -552,6 +553,8 @@ export function PlanView({ planId }: { planId: string }) {
           </tr>
         ))}</Fragment>)}</tbody>
       </table></div></div>}
+
+      {tab === "orders" && <PlanOrders plan={p} tz={tz} canPlan={canEdit} onChanged={() => undefined} />}
 
       {tab === "warnings" && <div className="panel">
         {warnings.length === 0 ? <div className="panel-body row" style={{ gap: 8 }}><LuCircleCheck style={{ color: "var(--ok)" }} />{t("pv.noWarnings")}</div> : (

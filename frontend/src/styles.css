@@ -1189,3 +1189,23 @@ body:has(.ai-fab) .content { padding-bottom: 96px; }
 .table.deliveries td:first-child .muted { max-width: 150px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .table.deliveries td:nth-child(5) .small { white-space: normal; min-width: 120px; }
 .table.deliveries td:nth-child(8) { white-space: normal; min-width: 96px; }
+
+/* Production orders */
+.ot-rows { display: flex; flex-direction: column; gap: 6px; }
+.ot-row { display: grid; grid-template-columns: 26px minmax(0, 1fr) minmax(0, 140px) 30px 30px; gap: 8px; align-items: center; }
+.ot-row.off .input { opacity: .55; }
+.ot-row .step-no { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); font-size: 12px; font-weight: 600; }
+.ot-logo { max-height: 56px; max-width: 220px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-md); background: #fff; }
+.ot-preview { width: min(900px, 80vw); height: 70vh; border: 1px solid var(--line); border-radius: var(--r-md); background: #fff; }
+.po-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.po-toolbar .field { margin: 0; }
+.po-actions { display: flex; flex-wrap: wrap; gap: 8px; border-top: 1px solid var(--line); background: var(--surface-2); }
+.po-actions .btn.disabled { opacity: .5; pointer-events: none; }
+.po-table tr.selected td { background: var(--brand-soft); }
+.po-num { width: 130px; height: 32px; font-family: var(--mono, ui-monospace), monospace; }
+.po-cell { display: flex; flex-direction: column; gap: 3px; }
+.po-numbering summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.po-numbering summary::-webkit-details-marker { display: none; }
+.po-numbering summary h3 { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
+.po-num-form { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 12px; align-items: start; }
+@media (max-width: 720px) { .po-num-form { grid-template-columns: 1fr; } .ot-row { grid-template-columns: 26px minmax(0, 1fr) 30px 30px; } .ot-row > .mono-id { display: none; } }

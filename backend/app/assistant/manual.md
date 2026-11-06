@@ -588,7 +588,7 @@ Tabs:
 | The site has no shifts | Planned around the clock | Set up the working calendar |
 | Lock warnings | See section 12 |  |
 
-## 12. Editing, releasing and comparing plans
+## 12. Editing, releasing, comparing plans and production orders
 
 Planners refine the engine's schedule by moving and locking batches; the engine re-plans everything else around them. Only **Draft** plans can be changed.
 
@@ -641,6 +641,29 @@ On **Production plans**, tick the box on two or three plan cards, then **Compare
 ### 12.6 Rename, archive, delete
 
 The **…** menu on a plan offers **Rename**, **Archive** or **Restore**, and **Delete plan**. Deleting removes the plan and its schedule; the deletion stays in the audit trail.
+
+### 12.7 Production orders
+
+A released plan issues **manufacturing orders** (raw materials, for dispensing) and **packaging orders** (packaging materials), one per batch. Open the plan and its **Orders** tab.
+
+**Batch numbers.** Plans number batches B001, B002 in start order; production orders need the plant's real batch numbers. Type a number in the **Batch number** box of any batch, or set the site's **Pattern** under **Batch numbers** (for example `{YY}{SEQ:3}` gives 26013, 26014…; `{YYYY}`, `{MM}` and `{CODE}` are also available) with the **Next number**, and click **Fill empty numbers**. A number can be changed later; it stays with the batch when the plan is re-planned, and one number cannot be used twice in a plan.
+
+**Creating orders.** Tick batches (one, several, all of a product with the **Product** filter and **Select shown**, or all), then **Create orders** and choose the kinds and templates. Each batch gets one order of each kind whose template lists materials it uses: a blend batch gets a manufacturing order, a packing batch a packaging order. Batches that already have an order of that kind are skipped. Quantities come from the batch's bill-of-materials version and quantity, with overage and assay compensation applied as in the plan.
+
+| Status | Meaning |
+| --- | --- |
+| Draft | Follows the plan and batch number until it is approved or issued. Prints with a DRAFT mark. Can be deleted. |
+| Approved | Every electronic approval level has signed (templates with electronic approval). The content is frozen. |
+| Issued | Released to the floor. The content is frozen; the file always prints the same. |
+| Cancelled | Kept with its reason; prints with a CANCELLED mark. |
+
+**Signing and issuing.** With electronic approval on, select orders and click **Sign**, choose the meaning and enter your password: your signature fills the next open level of each order, with your name and the time. Levels sign in order and by different people; a wrong password signs nothing and is recorded. When all levels have signed the order is **Approved**, and **Issue** releases it. Without electronic approval, **Issue** releases drafts directly and people sign the printed boxes.
+
+**Changes after issue.** If a batch number changes after an order was issued, the order shows a warning. **Reissue** cancels it with your reason and makes a new draft as the next revision (printed at the bottom). **Cancel orders** also asks for a reason.
+
+**Files.** **Download PDF** and **Download Word** produce one file for all selected orders, each starting on a new page with its own page count. Every download is recorded in the audit trail.
+
+**Templates** (Company settings › **Production orders**, administrators): one per kind, with the title, **Format number** (printed on every page), page orientation, logo, footer note, the **Number pattern** for order numbers (`{BATCH}`, `{YY}`, `{MM}`, `{DD}`, `{CODE}`, `{SEQ:4}`), the header fields and their labels and order, how many fields per row, the material table columns and their labels and order, which material types are listed, the approval levels and their titles, **Electronic approval in Complanning**, and the remarks heading and blank lines. **Preview** shows a sample order with the template as edited. Orders keep the layout they were approved or issued with.
 
 ## 13. Excel import and export, and sample data
 

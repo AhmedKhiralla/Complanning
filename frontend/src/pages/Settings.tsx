@@ -8,6 +8,7 @@ import { useI18n } from "../lib/i18n";
 import { navigate } from "../lib/router";
 import { useSession, type Policy } from "../lib/session";
 import type { StringKey } from "../lib/strings";
+import { OrderTemplatesTab } from "./orders/OrderTemplates";
 
 interface SettingsData {
   company: { id: string; code: string; name: string; country: string; timezone: string; default_language: "en" | "ar"; cost_currency: string };
@@ -20,7 +21,7 @@ interface SettingsData {
   security_limits: Record<string, [number, number]>;
 }
 
-const TABS = ["company", "features", "terms", "security"] as const;
+const TABS = ["company", "features", "terms", "security", "orders"] as const;
 type Tab = (typeof TABS)[number];
 
 function useSaver(onSaved: (d: SettingsData) => void) {
@@ -222,7 +223,7 @@ export function Settings() {
   const initialTab = new URLSearchParams(window.location.search).get("tab") as Tab | null;
   const [tab, setTabState] = useState<Tab>(initialTab && TABS.includes(initialTab) ? initialTab : "company");
   const setTab = (x: Tab) => { setTabState(x); navigate(`/settings?tab=${x}`, true); };
-  const labels: Record<Tab, StringKey> = { company: "settings.tab.company", features: "settings.tab.features", terms: "settings.tab.terms", security: "settings.tab.security" };
+  const labels: Record<Tab, StringKey> = { company: "settings.tab.company", features: "settings.tab.features", terms: "settings.tab.terms", security: "settings.tab.security", orders: "settings.tab.orders" };
   return (
     <>
       <PageHead title={t("settings.title")} lead={t("settings.lead", { company: me?.tenant?.name ?? "" })} />
@@ -239,6 +240,7 @@ export function Settings() {
           {tab === "features" && <FeaturesTab key={JSON.stringify(data.features)} data={data} onSaved={setData} />}
           {tab === "terms" && <TermsTab data={data} onSaved={setData} />}
           {tab === "security" && <SecurityTab key={JSON.stringify(data.security)} data={data} onSaved={setData} />}
+          {tab === "orders" && <OrderTemplatesTab />}
         </div>
       )}
     </>

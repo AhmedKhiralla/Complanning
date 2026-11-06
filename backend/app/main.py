@@ -14,7 +14,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
 from .config import settings
-from .routers import assistant, audit_trail, auth, boms, company, demand, excel, guide, master, plans, platform, production, rules, sample
+from .routers import assistant, audit_trail, auth, boms, company, demand, excel, guide, master, orders, plans, platform, production, rules, sample
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"),
                     format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -135,6 +135,21 @@ API_ROUTES = [
     Route("/api/plans/{plan_id}", plans.delete_plan, methods=["DELETE"]),
     Route("/api/plans/{plan_id}/export", plans.export_plan, methods=["GET"]),
     Route("/api/plans/{plan_id}/move", plans.move_batch, methods=["POST"]),
+    Route("/api/plans/{plan_id}/orders", orders.plan_orders, methods=["GET"]),
+    Route("/api/plans/{plan_id}/orders", orders.create_orders, methods=["POST"]),
+    Route("/api/plans/{plan_id}/batch-numbers", orders.set_batch_numbers, methods=["PUT"]),
+    Route("/api/plans/{plan_id}/batch-numbers/fill", orders.fill_batch_numbers, methods=["POST"]),
+    Route("/api/sites/{site_id}/batch-numbering", orders.get_numbering, methods=["GET"]),
+    Route("/api/sites/{site_id}/batch-numbering", orders.save_numbering, methods=["PUT"]),
+    Route("/api/order-templates", orders.list_templates, methods=["GET"]),
+    Route("/api/order-templates/preview", orders.preview_template, methods=["POST"]),
+    Route("/api/order-templates/{template_id}", orders.update_template, methods=["PUT"]),
+    Route("/api/orders/sign", orders.sign_orders, methods=["POST"]),
+    Route("/api/orders/issue", orders.issue_orders, methods=["POST"]),
+    Route("/api/orders/cancel", orders.cancel_orders, methods=["POST"]),
+    Route("/api/orders/reissue", orders.reissue_orders, methods=["POST"]),
+    Route("/api/orders/delete", orders.delete_drafts, methods=["POST"]),
+    Route("/api/orders/file", orders.order_file, methods=["GET"]),
     Route("/api/plans/{plan_id}/lock", plans.lock_batch, methods=["POST"]),
     Route("/api/plans/{plan_id}/replan", plans.replan, methods=["POST"]),
     Route("/api/plans/{plan_id}/release", plans.release_plan, methods=["POST"]),
@@ -160,7 +175,7 @@ class SecurityHeaders(BaseHTTPMiddleware):
         h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         h.setdefault("Content-Security-Policy",
                      "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com;"
-                     " font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';"
+                     " font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-src 'self' blob:;"
                      " frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
         if settings.cookie_secure:
             h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
