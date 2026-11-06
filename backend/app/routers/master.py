@@ -229,10 +229,20 @@ def create_item(call: Call):
 def update_item(call: Call):
     require_company_edit(call)
     iid = call.path["item_id"]
-    current = call.tx.one("SELECT id, stock_uom_id FROM items WHERE id = %s::uuid", iid)
+    current = call.tx.one("SELECT id, stock_uom_id, active FROM items WHERE id = %s::uuid", iid)
     if not current:
         raise not_found("Item")
     b: ItemFields = call.body
+    if "active" in b.model_fields_set and b.active is False and current["active"] and call.query.get("confirm") != "1":
+        # Deactivating does not take an item out of the bills of materials that use it, so say which ones do.
+        users = call.tx.q("SELECT DISTINCT p.code, bm.version FROM bom_lines l JOIN boms bm ON bm.id = l.bom_id"
+                          " JOIN items p ON p.id = bm.item_id WHERE l.component_item_id = %s::uuid AND bm.status = 'active'"
+                          " ORDER BY p.code", iid)
+        if users:
+            names = ", ".join(f"{u['code']} v{u['version']}" for u in users)
+            raise ApiError(409, "used_in_active_bom",
+                           f"Active bills of materials still use this item: {names}. Plans keep making or using it until "
+                           "you activate new versions without it.", extra={"boms": [dict(u) for u in users]})
     if "stock_uom_id" in b.model_fields_set and b.stock_uom_id is None:
         raise ApiError(422, "invalid", "Some fields need attention.", fields={"stock_uom_id": "A stock unit is required."})
     if b.stock_uom_id and str(b.stock_uom_id) != str(current["stock_uom_id"]):

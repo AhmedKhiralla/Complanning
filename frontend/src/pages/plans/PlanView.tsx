@@ -353,6 +353,7 @@ function warnText(w: Warning, t: ReturnType<typeof useI18n>["t"], qty: ReturnTyp
     case "shelf_life_short": return t("pv.w.shelf_life_short", { code: String(w.code), market: String(w.market), min: n(w.min), expires: String(w.expires) });
     case "campaign_short": return t("pv.w.campaign_short", { code: String(w.code), machine: String(w.machine), n: String(w.batches), min: String(w.min) });
     case "compensation_negative": return t("pv.w.compensation_negative", { code: String(w.code), item: String(w.item) });
+    case "inactive_item": return t("pv.w.inactive_item", { code: String(w.code), item: String(w.item) });
     case "compensation_unit": return t("pv.w.compensation_unit", { code: String(w.code), item: String(w.item) });
     default: return w.kind;
   }

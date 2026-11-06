@@ -296,6 +296,10 @@ def net_requirements(tx, site_id: str, start: dt.date, end: dt.date, features: d
                         problems.append({**pr, "item": it["code"]})
                 for l, need in needs:
                     cid = str(l["component_item_id"])
+                    if not items[cid]["active"]:
+                        pr = {"kind": "inactive_item", "code": items[cid]["code"], "item": it["code"]}
+                        if pr not in problems:
+                            problems.append(pr)
                     gross[cid] += need
                     used_by[cid].append({"code": it["code"], "quantity": need, "batches": len(sizes)})
         else:

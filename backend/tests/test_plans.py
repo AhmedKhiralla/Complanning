@@ -246,3 +246,23 @@ def test_otif(plan):
         total_ok += min(otq, req)
     assert o["otif"] == in_full
     assert o["qty_pct"] == round(total_ok / total_req * 100, 1)
+
+
+def test_inactive_item_still_in_active_bom(co):
+    """Deactivating an item that active BOMs use asks for confirmation; plans and net requirements warn about it."""
+    a, sid = co["admin"], co["sid"]
+    _, items, _ = a.get("/api/items")
+    bls = next(i for i in items["items"] if i["code"] == "SF-PCM-BLS")
+    status, body, _ = a.patch(f"/api/items/{bls['id']}", {"active": False})
+    assert status == 409 and body["error"]["code"] == "used_in_active_bom"
+    assert {b["code"] for b in body["error"]["boms"]} >= {"FG-PCM-20-EG"}
+    status, body, _ = a.patch(f"/api/items/{bls['id']}?confirm=1", {"active": False})
+    assert status == 200 and body["active"] is False
+    start = dt.date.today()
+    end = (start + dt.timedelta(days=45)).isoformat()
+    _, req, _ = a.get(f"/api/sites/{sid}/requirements?start={start.isoformat()}&end={end}")
+    assert any(p["kind"] == "inactive_item" and p["code"] == "SF-PCM-BLS" for p in req["problems"])
+    status, p, _ = a.post(f"/api/sites/{sid}/plans", {"horizon_start": start.isoformat(), "horizon_end": end, "material_constraints": False})
+    assert status == 200, p
+    assert any(w["kind"] == "inactive_item" and w["code"] == "SF-PCM-BLS" for w in p["kpis"]["warnings"])
+    assert a.patch(f"/api/items/{bls['id']}", {"active": True})[0] == 200

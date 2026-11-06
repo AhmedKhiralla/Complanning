@@ -256,7 +256,7 @@ The type cannot change after creation, because bills of materials and plans depe
 | Density (kg/L) | Lets kg and L convert for this item. |
 | Grade, Description, Dosage form | Reference only. |
 | Cleaning group | Produced items only. Chooses which changeover rules apply between this product and others (section 9). Empty = only same-product, product-pair and "any other change" rules can apply. |
-| Active | Inactive items keep their history but cannot be added to new bills of materials and drop out of plans. |
+| Active | Inactive items keep their history and cannot be added to new bills of materials. An item that an active bill of materials still uses keeps being planned: switching it off asks you to confirm and names those BOMs, and plans and net requirements warn about it until you activate new versions without it. |
 
 **Planning tab**
 

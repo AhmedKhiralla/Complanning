@@ -120,6 +120,8 @@ export function Requirements() {
         </Notice>}
         {noBom.length > 0 && <Notice tone="danger">{t("req.noBom", { codes: noBom.join(", ") })}</Notice>}
         {r.options.sales_plan === false && <Notice>{t("req.salesPlanOff")}</Notice>}
+        {(r.problems ?? []).filter((x) => x.kind === "inactive_item").map((x) => (
+          <Notice key={"in" + x.code + x.item} tone="warn">{t("req.inactiveItem", { code: x.code, item: x.item ?? "" })}</Notice>))}
         {(r.problems ?? []).filter((x) => x.kind === "compensation_negative").map((x) => (
           <Notice key={x.code + x.item} tone="danger">{t("req.compNegative", { code: x.code, item: x.item ?? "" })}</Notice>))}
         {r.cost && r.cost.missing.length > 0 && <Notice tone="warn">{t("req.costMissing", { codes: r.cost.missing.join(", ") })}</Notice>}

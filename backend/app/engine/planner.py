@@ -173,7 +173,7 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
     book = UnitBook(tx)
     items = {str(r["id"]): r for r in tx.q(
         "SELECT i.id, i.code, i.type, i.stock_uom_id, u.code AS uom, i.safety_stock, i.lead_time_days, i.qc_release_days,"
-        " i.release_lead_days, i.not_stock_controlled, i.hold_min_hours, i.hold_max_hours, i.release_at_risk_allowed,"
+        " i.release_lead_days, i.not_stock_controlled, i.hold_min_hours, i.hold_max_hours, i.release_at_risk_allowed, i.active,"
         " i.test_before_sale, i.standard_cost, i.shelf_life_months, i.units_per_shipper, i.pack_size"
         " FROM items i JOIN uoms u ON u.id = i.stock_uom_id")}
     boms = {str(b["item_id"]): b for b in tx.q("SELECT * FROM boms WHERE status = 'active'")}
@@ -404,6 +404,10 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
                 cid = str(l["component_item_id"])
                 need = float(need)
                 citem = items[cid]
+                if not citem["active"]:
+                    w = {"kind": "inactive_item", "code": citem["code"], "item": it["code"]}
+                    if w not in warnings:
+                        warnings.append(w)
                 if citem["type"] in PRODUCED:
                     need_by = b.need_by - dt.timedelta(days=lead) - _release_delay(citem, bool(options.get("release_at_risk")), rules)
                     reqs[cid].append([need_by, need, b])

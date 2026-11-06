@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { LuBoxes, LuPlus, LuSearch, LuTrash2 } from "react-icons/lu";
 import {
-  Badge, Button, Dialog, Empty, Field, LoadError, LoadingRows, Notice, PageHead, SelectField, Sheet, Switch, TextField,
+  Badge, Button, Confirm, Dialog, Empty, Field, LoadError, LoadingRows, Notice, PageHead, SelectField, Sheet, Switch, TextField,
   errorText, fieldErrors, useLoad, useToast,
 } from "../../components/ui";
 import { ExcelMenu, NumberField, ReadOnlyNote, SampleDataButton, TypeBadge, numOrNull, str, useMarkets, useUoms } from "../../components/master";
-import { get, patch, post, put } from "../../lib/api";
+import { ApiError, get, patch, post, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import { navigate } from "../../lib/router";
 import { usePerms, useSession } from "../../lib/session";
@@ -201,6 +201,7 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
   const [busy, setBusy] = useState(false);
   const [errs, setErrs] = useState<Record<string, string>>({});
   const [general, setGeneral] = useState<string | null>(null);
+  const [deactivate, setDeactivate] = useState<{ boms: { code: string; version: number }[]; body: Record<string, unknown> } | null>(null);
   const isNew = !itemId;
 
   if (item && loadedFor !== item.id + item.updated_at) {
@@ -236,7 +237,11 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
         const d = await patch<ItemDetail>(`/api/items/${itemId}`, body);
         detail.setData(d); toast(t("items.savedToast")); onSaved();
       }
-    } catch (e) { setErrs(fieldErrors(e)); setGeneral(errorText(e, t)); }
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "used_in_active_bom") {
+        setDeactivate({ boms: (e.extra.boms as { code: string; version: number }[]) ?? [], body });
+      } else { setErrs(fieldErrors(e)); setGeneral(errorText(e, t)); }
+    }
     finally { setBusy(false); }
   };
 
@@ -336,6 +341,13 @@ function ItemSheet({ itemId, uoms, onClose, onSaved, defaultType }: { itemId: st
           </>}
         </>
       )}
+      {deactivate && <Confirm danger title={t("items.deactivate.title")}
+        body={t("items.deactivate.body", { boms: deactivate.boms.map((b) => `${b.code} v${b.version}`).join(", ") })}
+        confirmLabel={t("items.deactivate.confirm")} onClose={() => setDeactivate(null)}
+        onConfirm={async () => {
+          const d = await patch<ItemDetail>(`/api/items/${itemId}?confirm=1`, deactivate.body);
+          detail.setData(d); toast(t("items.savedToast")); onSaved();
+        }} />}
     </Sheet>
   );
 }
