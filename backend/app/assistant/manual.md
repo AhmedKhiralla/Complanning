@@ -351,16 +351,19 @@ A routing lists the steps that make one batch of a produced item at this site, i
 
 | Setting | Effect |
 | --- | --- |
-| Steps and their order | Steps run in sequence: a step starts only after the previous one ends. Drag the arrows to reorder. |
+| Steps and their order | Steps run in sequence: a step starts only after the previous one ends, unless it runs with the previous step. Drag the arrows to reorder. |
 | Per batch (minutes) | The step takes this long whatever the batch size, for example granulation 90 minutes. |
 | Per hour (output rate) | Time = batch quantity ÷ rate, in the item's stock unit per hour, for example 6,000 CTN per hour. A smaller partial batch runs shorter. |
 | Setup (min) | Added to every batch of the step, on top of the run time. |
 | No pause | Off: the step pauses outside working time and resumes at the next shift. On: the step is placed only where it fits inside one unbroken block of working time. A step longer than any block leaves its batches unscheduled. |
+| Runs with previous step | For steps after the first. On: the step runs at the same time as the step before it, on its own machine, for example a cartoner connected to a blister machine. The plan books both machines for the same start and end, as long as the slower of the two needs, and the editor shows a double bar between the steps instead of an arrow. The two steps cannot share a machine. If either step has No pause, both are placed without a pause. |
 | Machines | Drag machines from the left, or use **Add machine**. Every machine listed is qualified. |
 | Preferred (star) | The usual machine, listed first and used for lead-time estimates. The engine still tries every qualified machine and takes the one that finishes the step earliest. |
 | Own minutes or own speed | Overrides the step's time for one machine, for example a slower second press. Empty = the step's time. |
 
 The card under each step shows the time per batch on the preferred machine. A produced item without a routing at the site cannot be scheduled there.
+
+**Connected machines and products packed two ways.** When a blister machine and a cartoner are connected, either give the item one step on one machine record that stands for both, or keep them as two machines with two steps and switch on **Runs with previous step** for the cartoning step. With the second way each machine has its own schedule and utilization. A product whose blisters are packed by hand gets its own blister semi-finished item, with a routing that uses only the blister machine, and a finished item packed on the manual packing line. Both finished items can use the same bulk product in their BOMs, each with its own packaging materials.
 
 ### 8.3 Working calendar
 

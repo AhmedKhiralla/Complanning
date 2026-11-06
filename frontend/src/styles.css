@@ -659,6 +659,7 @@ table.table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .flow-head { fill: none; stroke: var(--brand); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .flow-link.faint .flow-dash, .flow-link.faint .flow-head { stroke: var(--line-strong); animation: none; }
 @keyframes flow { to { stroke-dashoffset: -10; } }
+.flow-link.together line { stroke: var(--saffron); stroke-width: 2.5; stroke-linecap: round; }
 
 .step-card {
   width: 300px; flex: none; display: flex; flex-direction: column; background: var(--surface); border: 1px solid var(--line);

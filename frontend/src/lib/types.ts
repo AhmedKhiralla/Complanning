@@ -71,7 +71,7 @@ export interface Downtime {
 export interface StepResource { id?: string; resource_id: string; preferred: boolean; fixed_minutes?: number | null; rate_per_hour?: number | null; }
 export interface Step {
   id?: string; key?: string; seq?: number; name: string; time_model: "fixed" | "rate";
-  fixed_minutes: number | null; rate_per_hour: number | null; setup_minutes: number; uninterrupted?: boolean; resources: StepResource[];
+  fixed_minutes: number | null; rate_per_hour: number | null; setup_minutes: number; uninterrupted?: boolean; with_previous?: boolean; resources: StepResource[];
 }
 
 export interface Shift { id: string; period_id: string | null; weekday: number; name: string; start_time: string; end_time: string; hours: number; }

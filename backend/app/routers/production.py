@@ -165,7 +165,7 @@ def _routing(call: Call, site_id: str, item_id: str) -> dict:
     steps = []
     if rt:
         steps = call.tx.q(
-            """SELECT s.id, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes, s.uninterrupted,
+            """SELECT s.id, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes, s.uninterrupted, s.with_previous,
                       coalesce((SELECT json_agg(json_build_object('id', sr.id, 'resource_id', sr.resource_id, 'preferred', sr.preferred,
                                  'fixed_minutes', sr.fixed_minutes, 'rate_per_hour', sr.rate_per_hour)
                                  ORDER BY sr.preferred DESC, sr.created_at)
@@ -198,6 +198,7 @@ class StepIn(BaseModel):
     rate_per_hour: Decimal | None = Field(default=None, gt=0)
     setup_minutes: Decimal = Field(default=Decimal(0), ge=0)
     uninterrupted: bool = False
+    with_previous: bool = False
     resources: list[StepResourceIn] = Field(default_factory=list)
 
 
@@ -229,6 +230,8 @@ def save_routing(call: Call):
             errors[f"steps.{i}"] = "Use active machines of this site."
         elif len({r.resource_id for r in s.resources}) != len(s.resources):
             errors[f"steps.{i}"] = "A machine is listed twice on this step."
+        elif s.with_previous and i > 0 and {r.resource_id for r in s.resources} & {r.resource_id for r in b.steps[i - 1].resources}:
+            errors[f"steps.{i}"] = "This step runs together with the previous one, so it needs machines of its own."
     if errors:
         raise ApiError(422, "invalid", "Some steps need attention.", fields=errors)
 
@@ -251,13 +254,14 @@ def save_routing(call: Call):
         if s.id and s.id in existing:
             step_id = s.id
             call.tx.x("UPDATE routing_steps SET seq = %s, name = %s, time_model = %s, fixed_minutes = %s, rate_per_hour = %s,"
-                      " setup_minutes = %s, uninterrupted = %s WHERE id = %s::uuid", seq, s.name.strip(), s.time_model, fixed, rate,
-                      s.setup_minutes, s.uninterrupted, step_id)
+                       " setup_minutes = %s, uninterrupted = %s, with_previous = %s WHERE id = %s::uuid", seq, s.name.strip(), s.time_model,
+                      fixed, rate, s.setup_minutes, s.uninterrupted, s.with_previous and seq > 1, step_id)
         else:
             step_id = str(call.tx.val(
                 "INSERT INTO routing_steps (tenant_id, routing_id, seq, name, time_model, fixed_minutes, rate_per_hour, setup_minutes,"
-                " uninterrupted) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-                call.tenant_id, rt["id"], seq, s.name.strip(), s.time_model, fixed, rate, s.setup_minutes, s.uninterrupted))
+                 " uninterrupted, with_previous) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                call.tenant_id, rt["id"], seq, s.name.strip(), s.time_model, fixed, rate, s.setup_minutes, s.uninterrupted,
+                s.with_previous and seq > 1))
         # Exactly one preferred machine per step: the first marked, otherwise the first listed.
         pref_index = next((i for i, r in enumerate(s.resources) if r.preferred), 0)
         current = {str(r["resource_id"]): r for r in call.tx.q(

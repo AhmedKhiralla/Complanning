@@ -222,10 +222,10 @@ def find_items(ctx: Ctx, query: str) -> dict:
             item["active_bom"] = ctx.clean(bom) if bom else None
             if ctx.site:
                 item["routing_steps_here"] = [ctx.clean(s) for s in tx.q(
-                    "SELECT s.seq, s.name, s.uninterrupted, string_agg(r.code, ', ' ORDER BY sr.preferred DESC, r.code) AS machines"
+                    "SELECT s.seq, s.name, s.uninterrupted, s.with_previous AS runs_with_previous_step, string_agg(r.code, ', ' ORDER BY sr.preferred DESC, r.code) AS machines"
                     " FROM routings rt JOIN routing_steps s ON s.routing_id = rt.id"
                     " LEFT JOIN routing_step_resources sr ON sr.step_id = s.id LEFT JOIN resources r ON r.id = sr.resource_id"
-                    " WHERE rt.item_id = %s AND rt.site_id = %s GROUP BY s.seq, s.name, s.uninterrupted ORDER BY s.seq", iid, ctx.site["id"])]
+                    " WHERE rt.item_id = %s AND rt.site_id = %s GROUP BY s.seq, s.name, s.uninterrupted, s.with_previous ORDER BY s.seq", iid, ctx.site["id"])]
         if r["type"] == "finished":
             item["markets"] = [ctx.clean(m) for m in tx.q(
                 "SELECT m.code, im.max_sellable_per_month, im.min_remaining_shelf_pct FROM item_markets im"

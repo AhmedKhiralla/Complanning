@@ -388,15 +388,17 @@ def export_master(call: Call):
 
         ws = wb.create_sheet("Routings")
         ws.append(["Item", "Step", "Name", "Time model", "Minutes per batch", "Output per hour", "Setup (min)", "Uninterrupted",
-                   "Machine", "Preferred", "Own minutes", "Own output per hour"])
+                   "Runs with previous step", "Machine", "Preferred", "Own minutes", "Own output per hour"])
         for r in call.tx.q(
-                "SELECT i.code, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes, s.uninterrupted, m.code AS machine,"
+                "SELECT i.code, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes, s.uninterrupted, s.with_previous,"
+                " m.code AS machine,"
                 " sr.preferred, sr.fixed_minutes AS own_min, sr.rate_per_hour AS own_rate FROM routings rt JOIN items i ON i.id = rt.item_id"
                 " JOIN routing_steps s ON s.routing_id = rt.id JOIN routing_step_resources sr ON sr.step_id = s.id"
                 " JOIN resources m ON m.id = sr.resource_id WHERE rt.site_id = %s ORDER BY i.code, s.seq, sr.preferred DESC", site["id"]):
             f = lambda v: float(v) if v is not None else None
             ws.append([r["code"], r["seq"], r["name"], r["time_model"], f(r["fixed_minutes"]), f(r["rate_per_hour"]),
-                       f(r["setup_minutes"]), "yes" if r["uninterrupted"] else "no", r["machine"], "yes" if r["preferred"] else "no", f(r["own_min"]), f(r["own_rate"])])
+                       f(r["setup_minutes"]), "yes" if r["uninterrupted"] else "no",
+                       "yes" if r["with_previous"] else "no", r["machine"], "yes" if r["preferred"] else "no", f(r["own_min"]), f(r["own_rate"])])
         _style_header(ws); _autosize(ws)
     stamp = call.tx.val("SELECT to_char(now(), 'YYYYMMDD-HH24MI')")
     return _xlsx(wb, f"complanning-master-data-{stamp}.xlsx", call, "master_data")

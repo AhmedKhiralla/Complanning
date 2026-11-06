@@ -15,6 +15,7 @@ All times inside the engine are naive UTC datetimes.
 from __future__ import annotations
 
 import datetime as dt
+import itertools
 import math
 import random
 import time
@@ -32,7 +33,7 @@ PRODUCED = ("wip", "semi_finished", "finished")
 USE_STOCK = {"finished": "use_stock_fg", "semi_finished": "use_stock_semi", "wip": "use_stock_wip"}
 EPS = 1e-6
 H = dt.timedelta(hours=1)
-ENGINE_VERSION = "complanning-1.1"
+ENGINE_VERSION = "complanning-1.2"
 
 # Weights per objective: due date (per hour), changeover (per hour), value density.
 WEIGHTS = {
@@ -55,6 +56,16 @@ class Step:
     name: str
     options: list[Option]
     uninterrupted: bool = False
+    partners: list["Step"] = field(default_factory=list)   # steps that run together with this one, on their own machines
+
+    @property
+    def members(self) -> list["Step"]:
+        return [self] + self.partners
+
+    @property
+    def min_minutes(self) -> float:
+        """Shortest time for the step (with the steps that run together with it, the slowest of them)."""
+        return max(min(o.minutes for o in st.options) for st in self.members)
 
 
 @dataclass
@@ -189,8 +200,8 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
 
     # Routings: steps with qualified machines.
     routing = defaultdict(list)
-    for s in tx.q("SELECT rt.item_id, s.id, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes, s.uninterrupted"
-                  "  FROM routings rt JOIN routing_steps s ON s.routing_id = rt.id WHERE rt.site_id = %s::uuid ORDER BY s.seq", site["id"]):
+    for s in tx.q("SELECT rt.item_id, s.id, s.seq, s.name, s.time_model, s.fixed_minutes, s.rate_per_hour, s.setup_minutes, s.uninterrupted,"
+                  " s.with_previous FROM routings rt JOIN routing_steps s ON s.routing_id = rt.id WHERE rt.site_id = %s::uuid ORDER BY s.seq", site["id"]):
         routing[str(s["item_id"])].append(s)
     step_res = defaultdict(list)
     for sr in tx.q("SELECT sr.step_id, sr.resource_id, sr.preferred, sr.fixed_minutes, sr.rate_per_hour FROM routing_step_resources sr"
@@ -221,7 +232,16 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
                 opts = [o for o in opts if o.minutes <= longest[o.machine.id]]
                 if not opts:
                     return [], "no_window"
-            out.append(Step(s["seq"], s["name"], opts, bool(s["uninterrupted"])))
+            step = Step(s["seq"], s["name"], opts, bool(s["uninterrupted"]))
+            if s["with_previous"] and out:
+                # Runs together with the previous step: one booking over both machines, without a pause if either needs it.
+                lead = out[-1]
+                lead.partners.append(step)
+                flag = any(x.uninterrupted for x in lead.members)
+                for x in lead.members:
+                    x.uninterrupted = flag
+            else:
+                out.append(step)
         return out, None
 
     # Low-level codes.
@@ -374,7 +394,7 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
         # Components for each batch; produced components become requirements one level down.
         for b in made:
             b.steps, b.problem = steps_for(iid, b.qty)
-            lead = sum(min(o.minutes for o in s.options) for s in b.steps) / (60 * 16) + 1
+            lead = sum(s.min_minutes for s in b.steps) / (60 * 16) + 1
             needs, probs = line_needs(book, lines[str(bom["id"])], Decimal(str(b.qty / expected)), features, factors)
             for pr in probs:
                 w = {**pr, "item": it["code"]}
@@ -460,7 +480,7 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
             continue
         eff = b.lock["start"] if b.lock else b.need_by
         for sup, _q in b.suppliers:
-            lead = sum(min(o.minutes for o in st.options) for st in sup.steps) / (60 * 16) + 1 if sup.steps else 1
+            lead = sum(st.min_minutes for st in sup.steps) / (60 * 16) + 1 if sup.steps else 1
             want = eff - _release_delay(items[sup.item_id], bool(options.get("release_at_risk")), rules) - dt.timedelta(days=lead)
             if want < sup.need_by:
                 sup.need_by = want
@@ -496,7 +516,7 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
             b.not_before = max(start, min(limits[b.key]))
             own = max(own, b.not_before)
         for sup, _q in b.suppliers:
-            lead = sum(min(o.minutes for o in st.options) for st in sup.steps) / (60 * 16) + 1
+            lead = sum(st.min_minutes for st in sup.steps) / (60 * 16) + 1
             nb = own - dt.timedelta(days=lead) - _release_delay(items[sup.item_id], bool(options.get("release_at_risk")), rules)
             limits[sup.key].append(nb)
     # Do not start a batch much earlier than it is needed (stock built months ahead ties up money and shelf life).
@@ -506,7 +526,7 @@ def build_plan(tx, site: dict, horizon_start: dt.date, horizon_end: dt.date, obj
             # Only where a chain starts: later stages follow as soon as their inputs are released.
             if not b.steps or b.suppliers or b.lock:
                 continue
-            lead = sum(min(o.minutes for o in st.options) for st in b.steps) / (60 * 16) + 1
+            lead = sum(st.min_minutes for st in b.steps) / (60 * 16) + 1
             release = b.need_by - dt.timedelta(days=lead + float(early))
             if release > start:
                 b.not_before = max(b.not_before or start, release)
@@ -554,6 +574,11 @@ class OpResult:
     run_minutes: float
     prev: tuple | None = None          # (item_id, batch key) before this operation on the machine
     locked: bool = False
+    partners: list = field(default_factory=list)   # operations on other machines that run together with this one
+
+    @property
+    def machine_ids(self) -> set[str]:
+        return {self.machine.id} | {p.machine.id for p in self.partners}
 
 
 class Scheduler:
@@ -651,11 +676,54 @@ class Scheduler:
         wait = float(r["verification_wait_minutes"]) if self.p.rules["verification"] else 0.0
         return work, wait, kind, r["verification"] if self.p.rules["verification"] else "none"
 
-    def _evaluate(self, b: Batch, opt: Option, ready: dt.datetime) -> OpResult | None:
+    def _evaluate_step(self, b: Batch, step: Step, ready: dt.datetime) -> OpResult | None:
+        """Best placement of the batch's current step: the machine that finishes it first. A step with steps that run
+        together with it is placed on one machine of each at the same time, for as long as the slowest of them needs."""
+        if not step.partners:
+            best = None
+            for opt in step.options:
+                r = self._evaluate(b, opt, ready, step)
+                if r and (best is None or r.end < best.end):
+                    best = r
+            return best
+        best = None
+        for combo in itertools.islice(itertools.product(*(st.options for st in step.members)), 64):
+            if len({o.machine.id for o in combo}) < len(combo):
+                continue
+            r = self._evaluate_group(b, step, combo, ready)
+            if r and (best is None or r.end < best.end):
+                best = r
+        return best
+
+    def _evaluate_group(self, b: Batch, step: Step, combo: tuple, ready: dt.datetime) -> OpResult | None:
+        minutes = max(o.minutes for o in combo)
+        t = ready
+        rs: list[OpResult] = []
+        for _ in range(24):
+            rs = []
+            for st, o in zip(step.members, combo):
+                r = self._evaluate(b, Option(o.machine, minutes), t, st)
+                if r is None:
+                    return None
+                rs.append(r)
+            latest = max(r.start for r in rs)
+            if all(r.start == latest for r in rs):
+                break
+            t = latest
+        start, end = max(r.start for r in rs), max(r.end for r in rs)
+        out = []
+        for r in rs:
+            out.append(OpResult(r.batch, r.step, r.machine, r.co_start, r.co_end, r.co_minutes, r.co_wait, r.co_kind,
+                                r.co_verification, r.reclean_minutes, start, end, minutes, r.prev))
+        lead = out[0]
+        lead.partners = out[1:]
+        return lead
+
+    def _evaluate(self, b: Batch, opt: Option, ready: dt.datetime, step: Step) -> OpResult | None:
         """Earliest placement on the machine after its last planned operation, in a gap that also leaves
         room for the changeover into the next locked batch."""
         m = opt.machine
-        key = (b.key, m.id, self.next_step[b.key])
+        key = (b.key, m.id, step.seq, round(opt.minutes, 4))
         cached = self._cache.get(key)
         if cached and cached[0] == self._mver[m.id] and cached[1] == ready:
             return cached[2]
@@ -668,7 +736,7 @@ class Scheduler:
                 if blocks[i]["end"] > g_start:
                     g_start, prev, tracked = blocks[i]["end"], (blocks[i]["item"], blocks[i]["key"]), False
                 i += 1
-            res = self._place(b, opt, ready, m, g_start, prev, tracked)
+            res = self._place(b, opt, ready, m, g_start, prev, tracked, step)
             if res is None:
                 break
             nxt = blocks[i] if i < len(blocks) else None
@@ -683,7 +751,7 @@ class Scheduler:
         return res
 
     def _place(self, b: Batch, opt: Option, ready: dt.datetime, m: Machine, free: dt.datetime, prev: tuple | None,
-               tracked: bool) -> OpResult | None:
+               tracked: bool, step: Step) -> OpResult | None:
         work, wait, kind, ver = self._changeover(m, b, max(free, ready), prev, tracked)
         co_start = co_end = None
         clean_at = free
@@ -708,7 +776,6 @@ class Scheduler:
             if s2 is None:
                 return None
             start = m.cal.next_work(s2) or s2
-        step = b.steps[self.next_step[b.key]]
         if step.uninterrupted:
             start = m.cal.fit(start, opt.minutes)
             if start is None:
@@ -745,7 +812,7 @@ class Scheduler:
         return score
 
     def _commit(self, r: OpResult) -> None:
-        b, m = r.batch, r.machine
+        b = r.batch
         if self.next_step[b.key] == 0:
             _ready, notes = self._materials(b, commit=True)
             self.material_notes[b.key] = notes
@@ -757,6 +824,21 @@ class Scheduler:
                     self.hold_warnings.append({"kind": "hold_exceeded", "code": s.code, "key": s.key, "consumer": b.code,
                                                "hours": (r.start - d["end"]).total_seconds() / 3600, "limit": float(hmax),
                                                "quantity": q, "uom": s.uom})
+        for op in [r] + r.partners:
+            self._book(op)
+        self.next_step[b.key] += 1
+        self.step_end[b.key] = r.end
+        if self.next_step[b.key] >= len(b.steps):
+            first = next(o.start for o in self.ops if o.batch.key == b.key)
+            it = self.p.items[b.item_id]
+            ship = r.end
+            if b.type == "finished" and it["test_before_sale"] and self.p.rules["qc_lead_times"]:
+                ship = r.end + dt.timedelta(days=float(it["release_lead_days"] or 0))
+            self.done[b.key] = {"start": first, "end": r.end, "available": r.end + self._release(b), "ship": ship}
+
+    def _book(self, r: OpResult) -> None:
+        """The machine's side of an operation: campaign counters, when it is free, what ran last."""
+        b, m = r.batch, r.machine
         last = r.prev
         if r.co_kind == "campaign_end":
             self.campaign_breaks += 1
@@ -772,36 +854,49 @@ class Scheduler:
         self.last[m.id] = (b.item_id, b.key)
         self._mver[m.id] += 1
         self.ops.append(r)
-        self.next_step[b.key] += 1
-        self.step_end[b.key] = r.end
-        if self.next_step[b.key] >= len(b.steps):
-            first = next(o.start for o in self.ops if o.batch.key == b.key)
-            it = self.p.items[b.item_id]
-            ship = r.end
-            if b.type == "finished" and it["test_before_sale"] and self.p.rules["qc_lead_times"]:
-                ship = r.end + dt.timedelta(days=float(it["release_lead_days"] or 0))
-            self.done[b.key] = {"start": first, "end": r.end, "available": r.end + self._release(b), "ship": ship}
 
     def _place_locked(self) -> None:
         """Put locked batches exactly where the planner wants them, before anything else."""
         for b in sorted((x for x in self.p.batches if x.lock and not x.problem), key=lambda x: x.lock["start"]):
             t = b.lock["start"]
             placed = []
+            ok = True
             for step in b.steps:
-                want = b.lock["machines"].get(step.seq)
-                opt = next((o for o in step.options if o.machine.id == want), step.options[0])
-                m = opt.machine
-                s0 = m.cal.next_work(t)
-                if s0 is not None and step.uninterrupted:
-                    s0 = m.cal.fit(s0, opt.minutes)
+                chosen, used = [], set()
+                for st in step.members:
+                    want = b.lock["machines"].get(st.seq)
+                    free_opts = [o for o in st.options if o.machine.id not in used] or st.options
+                    opt = next((o for o in free_opts if o.machine.id == want), free_opts[0])
+                    used.add(opt.machine.id)
+                    chosen.append((st, opt))
+                minutes = max(o.minutes for _st, o in chosen)
+                s0 = t
+                for _ in range(24):
+                    starts = []
+                    for _st, o in chosen:
+                        x = o.machine.cal.next_work(s0)
+                        if x is not None and step.uninterrupted:
+                            x = o.machine.cal.fit(x, minutes)
+                        starts.append(x)
+                    if any(x is None for x in starts):
+                        s0 = None
+                        break
+                    if all(x == starts[0] for x in starts):
+                        break
+                    s0 = max(starts)
                 if s0 is None:
+                    ok = False
                     break
-                e = s0 + dt.timedelta(minutes=opt.minutes) if step.uninterrupted else m.cal.add_work(s0, opt.minutes)
-                if e is None:
+                ends = [s0 + dt.timedelta(minutes=minutes) if step.uninterrupted else o.machine.cal.add_work(s0, minutes)
+                        for _st, o in chosen]
+                if any(e is None for e in ends):
+                    ok = False
                     break
-                placed.append(OpResult(b, step, m, None, None, 0.0, 0.0, None, None, 0.0, s0, e, opt.minutes, None, True))
+                e = max(ends)
+                for st, o in chosen:
+                    placed.append(OpResult(b, st, o.machine, None, None, 0.0, 0.0, None, None, 0.0, s0, e, minutes, None, True))
                 t = e
-            if len(placed) < len(b.steps):
+            if not ok:
                 self.failed[b.key] = "no_capacity"
                 continue
             _r, notes = self._materials(b, commit=True)
@@ -875,11 +970,7 @@ class Scheduler:
                         self.failed[b.key] = "supplier_failed"
                         progressed = True
                     continue
-                best = None
-                for opt in b.steps[i].options:
-                    r = self._evaluate(b, opt, ready)
-                    if r and (best is None or r.end < best.end):
-                        best = r
+                best = self._evaluate_step(b, b.steps[i], ready)
                 if best is None:
                     self.failed[b.key] = "no_capacity"
                     progressed = True
@@ -895,15 +986,17 @@ class Scheduler:
                 continue
             t_star = min(cands, key=lambda r: r.end)
             m_star = t_star.machine
+            star_ids = t_star.machine_ids
             conflict = []
             for r in cands:
-                if r.machine.id == m_star.id:
+                if r.machine_ids & star_ids:
                     if r.start < t_star.end:
                         conflict.append(r)
                     continue
-                if any(o.machine.id == m_star.id for o in r.batch.steps[self.next_step[r.batch.key]].options):
-                    alt = self._evaluate(r.batch, next(o for o in r.batch.steps[self.next_step[r.batch.key]].options
-                                                       if o.machine.id == m_star.id), readies[r.batch.key])
+                st = r.batch.steps[self.next_step[r.batch.key]]
+                if not st.partners and not t_star.partners and any(o.machine.id == m_star.id for o in st.options):
+                    alt = self._evaluate(r.batch, next(o for o in st.options if o.machine.id == m_star.id),
+                                         readies[r.batch.key], st)
                     if alt and alt.start < t_star.end and alt.end <= r.end + (r.end - r.start):
                         conflict.append(alt)
             chosen = min(conflict or [t_star], key=self._priority)

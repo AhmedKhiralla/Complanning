@@ -241,6 +241,13 @@ export function RoutingEditor({ itemId }: { itemId: string }) {
                             onChange={(v) => update(s.key, (x) => ({ ...x, uninterrupted: v }))} />
                           <span>{t("routings.uninterrupted")}</span>
                         </div>
+                        {i > 0 && (
+                          <div className="no-pause together" title={t("routings.withPreviousHint")}>
+                            <Switch label={t("routings.withPrevious")} checked={!!s.with_previous} disabled={!canEdit}
+                              onChange={(v) => update(s.key, (x) => ({ ...x, with_previous: v }))} />
+                            <span>{t("routings.withPrevious")}</span>
+                          </div>
+                        )}
                       </div>
 
                       <div className={`dropzone ${s.resources.length ? "" : "empty"}`}>
@@ -282,7 +289,7 @@ export function RoutingEditor({ itemId }: { itemId: string }) {
                       {est && <footer className="step-foot num">{t("routings.stepTime", { h: qty(est.h, 1), code: est.code })}</footer>}
                       {err && <div className="step-error" role="alert">{err}</div>}
                     </article>
-                    {i < steps.length - 1 && <FlowLink />}
+                    {i < steps.length - 1 && <FlowLink together={!!steps[i + 1].with_previous} label={t("routings.togetherLink")} />}
                   </div>
                 );
               })}
@@ -303,7 +310,16 @@ export function RoutingEditor({ itemId }: { itemId: string }) {
   );
 }
 
-function FlowLink({ faint }: { faint?: boolean }) {
+function FlowLink({ faint, together, label }: { faint?: boolean; together?: boolean; label?: string }) {
+  if (together) {
+    // Two steps that run at the same time: a double bar instead of an arrow.
+    return (
+      <svg className="flow-link together" viewBox="0 0 48 24" role="img" aria-label={label}>
+        <title>{label}</title>
+        <line x1="4" y1="8" x2="44" y2="8" /><line x1="4" y1="16" x2="44" y2="16" />
+      </svg>
+    );
+  }
   return (
     <svg className={`flow-link ${faint ? "faint" : ""}`} viewBox="0 0 48 24" aria-hidden>
       <line x1="2" y1="12" x2="40" y2="12" className="flow-dash" />
@@ -313,9 +329,9 @@ function FlowLink({ faint }: { faint?: boolean }) {
 }
 
 function strip(steps: EStep[]) {
-  return steps.map(({ id, name, time_model, fixed_minutes, rate_per_hour, setup_minutes, uninterrupted, resources }) => ({
+  return steps.map(({ id, name, time_model, fixed_minutes, rate_per_hour, setup_minutes, uninterrupted, with_previous, resources }, i) => ({
     id, name, time_model, fixed_minutes: time_model === "fixed" ? fixed_minutes : null, rate_per_hour: time_model === "rate" ? rate_per_hour : null,
-    setup_minutes: Number(setup_minutes || 0), uninterrupted: !!uninterrupted,
+    setup_minutes: Number(setup_minutes || 0), uninterrupted: !!uninterrupted, with_previous: i > 0 && !!with_previous,
     resources: resources.map((r) => ({ resource_id: r.resource_id, preferred: r.preferred,
       fixed_minutes: time_model === "fixed" ? r.fixed_minutes ?? null : null, rate_per_hour: time_model === "rate" ? r.rate_per_hour ?? null : null })),
   }));

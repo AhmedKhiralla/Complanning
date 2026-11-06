@@ -169,3 +169,60 @@ def test_uninterrupted_flag_in_routing(co):
     status, saved, _ = a.put(f"/api/sites/{sid}/routings/{blend}", {"steps": steps})
     assert status == 200, saved
     assert {s["name"]: s["uninterrupted"] for s in saved["steps"]}["Dispensing"] is True
+
+
+def test_steps_that_run_together(co):
+    """A step that runs together with the previous one books both machines for the same time, never one after the other."""
+    a, sid = co["admin"], co["sid"]
+    _, items, _ = a.get("/api/items")
+    fg = next(i["id"] for i in items["items"] if i["code"] == "FG-PCM-20-EG")
+    _, r, _ = a.get(f"/api/sites/{sid}/routings/{fg}")
+    assert [s["with_previous"] for s in r["steps"]] == [False, False]
+    steps = [{**s, "with_previous": s["name"].startswith("Checkweighing")} for s in r["steps"]]
+    status, saved, _ = a.put(f"/api/sites/{sid}/routings/{fg}", {"steps": steps})
+    assert status == 200, saved
+    assert [s["with_previous"] for s in saved["steps"]] == [False, True]
+    # The first step cannot run with a previous one; the flag is ignored there.
+    first = [{**s, "with_previous": True} for s in saved["steps"]]
+    _, again, _ = a.put(f"/api/sites/{sid}/routings/{fg}", {"steps": first})
+    assert [s["with_previous"] for s in again["steps"]] == [False, True]
+    # Steps that run together need machines of their own.
+    clash = [dict(s) for s in saved["steps"]]
+    clash[1]["resources"] = clash[1]["resources"] + [{"resource_id": clash[0]["resources"][0]["resource_id"], "preferred": False}]
+    status, body, _ = a.put(f"/api/sites/{sid}/routings/{fg}", {"steps": clash})
+    assert status == 422 and "steps.1" in body["error"]["fields"]
+
+    start = dt.date.today()
+    status, p, _ = a.post(f"/api/sites/{sid}/plans", {"horizon_start": start.isoformat(),
+                                                       "horizon_end": (start + dt.timedelta(days=45)).isoformat(),
+                                                       "material_constraints": False})
+    assert status == 200, p
+    _, full, _ = a.get(f"/api/plans/{p['id']}")
+    item_of = {b["id"]: b["code"] for b in full["batches"]}
+    by_batch = defaultdict(dict)
+    for o in full["operations"]:
+        if item_of[o["batch_id"]] == "FG-PCM-20-EG":
+            by_batch[o["batch_id"]][o["step_name"]] = o
+    assert by_batch
+    for ops in by_batch.values():
+        cart, chk = ops["Cartoning"], ops["Checkweighing and serialisation"]
+        assert cart["start_at"] == chk["start_at"] and cart["end_at"] == chk["end_at"]
+        assert cart["resource_id"] != chk["resource_id"]
+    # No machine runs two operations at once.
+    per_m = defaultdict(list)
+    for o in full["operations"]:
+        per_m[o["resource_id"]].append((ts(o["start_at"]), ts(o["end_at"])))
+    for spans in per_m.values():
+        spans.sort()
+        for (s1, e1), (s2, _e2) in zip(spans, spans[1:]):
+            assert s2 >= e1
+    # Moving the batch keeps both steps together.
+    bid, ops = next(iter(by_batch.items()))
+    new_at = ts(ops["Cartoning"]["start_at"]) + dt.timedelta(days=2)
+    status, moved, _ = a.post(f"/api/plans/{p['id']}/move", {"batch_id": bid, "seq": 1,
+                                                              "resource_id": ops["Cartoning"]["resource_id"],
+                                                              "start_at": new_at.isoformat()})
+    assert status == 200, moved
+    _, after, _ = a.get(f"/api/plans/{p['id']}")
+    mine = [o for o in after["operations"] if o["batch_id"] == moved["focus"]]
+    assert len(mine) == 2 and mine[0]["start_at"] == mine[1]["start_at"] and mine[0]["end_at"] == mine[1]["end_at"]
