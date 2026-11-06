@@ -405,6 +405,7 @@ export function PlanView({ planId }: { planId: string }) {
   };
   const warnings = k.warnings ?? [];
   const otif = otifOf(p.demand);
+  const byType = batchGroups(p.batches);
   const lateLabel = (h: number) => t("pv.st.late", { d: h >= 24 ? t("pv.nDays", { n: qty(h / 24, 1) }) : t("pv.nHours", { n: qty(h, 0) }) });
 
   return (
@@ -449,7 +450,9 @@ export function PlanView({ planId }: { planId: string }) {
           <strong>{otif.pct === null ? "—" : `${qty(otif.pct, 0)}%`}</strong>
           <span className="small subtle">{t("pv.kpi.otifSub", { n: otif.otif, of: otif.lines, q: otif.qtyPct === null ? "—" : qty(otif.qtyPct, 1) })}</span></div>}
         <div className={`kpi ${k.unscheduled ? "bad" : ""}`}><span className="icon"><LuChartGantt /></span><span className="k">{t("pv.kpi.batches")}</span>
-          <strong>{k.scheduled}</strong>{k.unscheduled > 0 && <span className="small text-danger">{t("pv.kpi.unscheduled", { n: k.unscheduled })}</span>}</div>
+          <strong>{k.scheduled}</strong>
+          {byType.length > 0 && <span className="small subtle">{byType.map((g) => `${g.scheduled} ${t(`pv.grp.${g.type}` as never)}`).join(" · ")}</span>}
+          {k.unscheduled > 0 && <span className="small text-danger">{t("pv.kpi.unscheduled", { n: k.unscheduled })}</span>}</div>
         <div className="kpi"><span className="icon"><LuSprayCan /></span><span className="k">{t("pv.kpi.co")}</span>
           <strong>{dur(k.changeover_hours * 60)}</strong><span className="small subtle">{t("pv.kpi.coSub", { n: k.changeovers })}</span></div>
         <div className="kpi"><span className="icon">{OBJ_ICON.sales_value}</span><span className="k">{t("pv.kpi.value")}</span>
@@ -529,7 +532,14 @@ export function PlanView({ planId }: { planId: string }) {
       {tab === "batches" && <div className="panel"><div className="table-wrap"><table className="table">
         <thead><tr><th>{t("pv.batch")}</th><th>{t("pv.item")}</th><th className="num">{t("pv.qty")}</th><th>{t("pv.start")}</th><th>{t("pv.end")}</th>
           <th>{t("pv.available")}</th><th>{t("pv.status")}</th></tr></thead>
-        <tbody>{p.batches.map((b) => (
+        <tbody>{byType.map((g) => <Fragment key={g.type}>
+          <tr className="group-row"><td colSpan={7}>
+            <span className="row" style={{ gap: 10, flexWrap: "wrap" }}><TypeBadge type={g.type} />
+              <strong>{t("pv.grpCount", { n: g.batches.length })}</strong>
+              <span className="small subtle">{g.totals.map(([u, q]) => `${qty(q, 0)} ${u}`).join(" · ")}</span>
+              {g.batches.length > g.scheduled && <span className="small text-danger">{t("pv.kpi.unscheduled", { n: g.batches.length - g.scheduled })}</span>}</span>
+          </td></tr>
+          {g.batches.map((b) => (
           <tr key={b.id} className="clickable" onClick={() => { setSelected(b.id); setTab("gantt"); }}>
             <td className="mono-id cell-main">{b.batch_no}</td>
             <td><span className="mono-id">{b.code}</span> <TypeBadge type={b.type} /></td>
@@ -540,7 +550,7 @@ export function PlanView({ planId }: { planId: string }) {
             <td>{b.status === "scheduled" ? <LuCircleCheck style={{ color: "var(--ok)" }} aria-hidden />
               : <Badge tone="danger">{t(`pv.problem.${b.problem}` as never)}</Badge>}</td>
           </tr>
-        ))}</tbody>
+        ))}</Fragment>)}</tbody>
       </table></div></div>}
 
       {tab === "warnings" && <div className="panel">
@@ -607,4 +617,16 @@ function otifOf(rows: PDemand[]) {
     qtyPct: requested > 0 ? (onTime / requested) * 100 : null,
     requested, planned, onTime, sameUom: uoms.size === 1 && known.length === lines.length ? [...uoms][0] : null,
   };
+}
+
+/** Batches by stage (work in process, semi-finished, finished), in batch order, with totals per unit. */
+function batchGroups(batches: PBatch[]) {
+  const order: ItemType[] = ["wip", "semi_finished", "finished"];
+  const types = [...order, ...Array.from(new Set(batches.map((b) => b.type))).filter((x) => !order.includes(x))];
+  return types.map((type) => {
+    const list = batches.filter((b) => b.type === type);
+    const totals = new Map<string, number>();
+    for (const b of list) totals.set(b.uom, (totals.get(b.uom) ?? 0) + Number(b.quantity));
+    return { type, batches: list, scheduled: list.filter((b) => b.status === "scheduled").length, totals: [...totals.entries()] };
+  }).filter((g) => g.batches.length > 0);
 }
