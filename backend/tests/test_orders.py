@@ -150,3 +150,34 @@ def test_electronic_approval_issue_and_reissue(co):
     # Drafts can be deleted; cancelling needs a reason.
     assert a.post("/api/orders/cancel", {"order_ids": [new["id"]], "reason": "x"})[0] == 422
     assert a.post("/api/orders/delete", {"order_ids": [new["id"]]})[0] == 200
+
+
+def test_yearly_restart(co, db_url):
+    """With the yearly option, the counter goes back to 1 with the first batch numbered in a new year."""
+    import psycopg
+    a, sid = co["admin"], co["sid"]
+    status, n, _ = a.put(f"/api/sites/{sid}/batch-numbering", {"pattern": "{YY}{SEQ:3}", "next": 57, "yearly": True})
+    assert status == 200 and n["yearly"] is True and n["next"] == 57
+    # Pretend the counter was last used last year.
+    conn = psycopg.connect(db_url)
+    conn.execute("UPDATE sites SET batch_number_year = batch_number_year - 1 WHERE id = %s", (sid,))
+    conn.commit()
+    conn.close()
+    _, n, _ = a.get(f"/api/sites/{sid}/batch-numbering")
+    assert n["next"] == 1 and n["example"] == f"{dt.date.today().year % 100:02d}001"
+    status, n, _ = a.put(f"/api/sites/{sid}/batch-numbering", {"pattern": "{YY}{SEQ:3}", "next": 57, "yearly": False})
+    assert n["next"] == 57
+
+
+def test_fill_skips_numbers_on_orders(co):
+    """Filling numbers on another plan never reuses a batch number that is already on an order of the site."""
+    a, sid = co["admin"], co["sid"]
+    _, lst, _ = a.get(f"/api/plans/{co['plan']['id']}/orders")
+    taken = {o["batch_number"] for o in lst["orders"] if o["status"] != "cancelled"}
+    start = dt.date.today()
+    _, p2, _ = a.post(f"/api/sites/{sid}/plans", {"horizon_start": start.isoformat(),
+                                                  "horizon_end": (start + dt.timedelta(days=40)).isoformat(), "material_constraints": False})
+    assert a.put(f"/api/sites/{sid}/batch-numbering", {"pattern": "{YY}{SEQ:3}", "next": 13})[0] == 200
+    status, filled, _ = a.post(f"/api/plans/{p2['id']}/batch-numbers/fill", {})
+    assert status == 200 and filled["filled"] > 0
+    assert not (set(filled["batch_numbers"].values()) & taken)

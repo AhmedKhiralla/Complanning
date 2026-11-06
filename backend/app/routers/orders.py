@@ -123,6 +123,7 @@ def preview_template(call: Call):
 class NumberingIn(BaseModel):
     pattern: str | None = Field(default=None, max_length=60)
     next: int = Field(default=1, ge=1, le=10_000_000)
+    yearly: bool = False
 
 
 @endpoint(auth="tenant_user", body=NumberingIn)
@@ -134,14 +135,26 @@ def save_numbering(call: Call):
     if pat and not O.uses_seq(pat):
         raise ApiError(422, "invalid", "Some fields need attention.",
                        fields={"pattern": "Include {SEQ} (for example {YY}{SEQ:3}) so each batch gets its own number."})
-    call.tx.x("UPDATE sites SET batch_number_pattern = %s, batch_number_next = %s WHERE id = %s::uuid", pat, b.next, sid)
+    year = O.tz_today(call.tx.one("SELECT timezone FROM sites WHERE id = %s::uuid", sid)).year
+    call.tx.x("UPDATE sites SET batch_number_pattern = %s, batch_number_next = %s, batch_number_yearly = %s,"
+              " batch_number_year = %s WHERE id = %s::uuid", pat, b.next, b.yearly, year, sid)
     return _numbering(call, sid)
 
 
+def _next_seq(s: dict, today) -> int:
+    """The counter value the next batch gets: back to 1 in a new year when the site restarts yearly."""
+    if s["batch_number_yearly"] and s["batch_number_year"] and s["batch_number_year"] != today.year:
+        return 1
+    return s["batch_number_next"]
+
+
 def _numbering(call: Call, sid: str) -> dict:
-    s = call.tx.one("SELECT batch_number_pattern, batch_number_next, timezone FROM sites WHERE id = %s::uuid", sid)
-    nxt = O.expand(s["batch_number_pattern"], O.tz_today(s), seq=s["batch_number_next"], code="CODE") if s["batch_number_pattern"] else None
-    return {"pattern": s["batch_number_pattern"], "next": s["batch_number_next"], "example": nxt}
+    s = call.tx.one("SELECT batch_number_pattern, batch_number_next, batch_number_yearly, batch_number_year, timezone"
+                    " FROM sites WHERE id = %s::uuid", sid)
+    today = O.tz_today(s)
+    seq = _next_seq(s, today)
+    nxt = O.expand(s["batch_number_pattern"], today, seq=seq, code="CODE") if s["batch_number_pattern"] else None
+    return {"pattern": s["batch_number_pattern"], "next": seq, "yearly": s["batch_number_yearly"], "example": nxt}
 
 
 @endpoint(auth="tenant_user")
@@ -211,15 +224,18 @@ class FillIn(BaseModel):
 
 
 def _fill(call: Call, p: dict, site: dict, batch_ids: list[str] | None) -> int:
-    s = call.tx.one("SELECT batch_number_pattern, batch_number_next, timezone FROM sites WHERE id = %s FOR UPDATE", site["id"])
+    s = call.tx.one("SELECT batch_number_pattern, batch_number_next, batch_number_yearly, batch_number_year, timezone"
+                    " FROM sites WHERE id = %s FOR UPDATE", site["id"])
     if not s["batch_number_pattern"]:
         raise ApiError(409, "no_pattern", "Set a batch number pattern for this site first (Orders tab › Batch numbers).")
     current = p["batch_numbers"] or {}
     rows = call.tx.q("SELECT b.id, b.item_id, b.ordinal, i.code FROM plan_batches b JOIN items i ON i.id = b.item_id"
                      " WHERE b.plan_id = %s AND b.status = 'scheduled' ORDER BY b.batch_no", p["id"])
-    nxt, changes = s["batch_number_next"], {}
-    used = set(current.values())
     today = O.tz_today(s)
+    nxt, changes = _next_seq(s, today), {}
+    # Never hand out a number already on this plan or on an order of the site (any plan, not cancelled).
+    used = set(current.values()) | {r["batch_number"] for r in call.tx.q(
+        "SELECT DISTINCT batch_number FROM production_orders WHERE site_id = %s AND status <> 'cancelled'", site["id"])}
     for r in rows:
         if batch_ids and str(r["id"]) not in batch_ids:
             continue
@@ -234,7 +250,7 @@ def _fill(call: Call, p: dict, site: dict, batch_ids: list[str] | None) -> int:
         changes[str(r["id"])] = num
     if changes:
         _set_numbers(call, p, changes)
-        call.tx.x("UPDATE sites SET batch_number_next = %s WHERE id = %s", nxt, site["id"])
+        call.tx.x("UPDATE sites SET batch_number_next = %s, batch_number_year = %s WHERE id = %s", nxt, today.year, site["id"])
     return len(changes)
 
 

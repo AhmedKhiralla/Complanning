@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { LuFileText, LuFileType, LuHash, LuPenLine, LuPlus, LuRefreshCw, LuSend, LuTrash2, LuX } from "react-icons/lu";
 import { TypeBadge } from "../../components/master";
-import { Badge, Button, Dialog, Field, LoadError, Notice, SelectField, TextField, errorText, useLoad, useToast } from "../../components/ui";
+import { Badge, Button, Dialog, Field, LoadError, Notice, SelectField, Switch, TextField, errorText, useLoad, useToast } from "../../components/ui";
 import { get, post, put } from "../../lib/api";
 import { useI18n } from "../../lib/i18n";
 import type { StringKey } from "../../lib/strings";
@@ -21,7 +21,7 @@ interface Batch {
 }
 interface OrdersData {
   orders: Order[]; templates: { id: string; kind: Kind; name: string; is_default: boolean; active: boolean }[];
-  batch_numbers: Record<string, string>; numbering: { pattern: string | null; next: number; example: string | null };
+  batch_numbers: Record<string, string>; numbering: { pattern: string | null; next: number; yearly: boolean; example: string | null };
 }
 
 const tone = (s: Order["status"]) => (s === "issued" ? "ok" : s === "approved" ? "brand" : s === "cancelled" ? "danger" : "warn");
@@ -182,11 +182,12 @@ function Numbering({ siteId, planId, numbering, canPlan, onDone }: {
   const toast = useToast();
   const [pattern, setPattern] = useState(numbering.pattern ?? "");
   const [next, setNext] = useState(String(numbering.next));
+  const [yearly, setYearly] = useState(numbering.yearly);
   const [err, setErr] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [open, setOpen] = useState(!numbering.pattern);
-  useEffect(() => { setNext(String(numbering.next)); setPattern(numbering.pattern ?? ""); }, [numbering.next, numbering.pattern]);
+  useEffect(() => { setNext(String(numbering.next)); setPattern(numbering.pattern ?? ""); setYearly(numbering.yearly); }, [numbering.next, numbering.pattern, numbering.yearly]);
   return (
     <details className="panel po-numbering" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
       <summary className="panel-head"><h3><LuHash aria-hidden /> {t("po.numbering")}</h3>
@@ -197,11 +198,15 @@ function Numbering({ siteId, planId, numbering, canPlan, onDone }: {
         <div className="po-num-form">
           <TextField label={t("po.pattern")} hint={t("po.patternHint")} value={pattern} dir="ltr" maxLength={60} disabled={!canPlan}
             error={err.pattern} onChange={setPattern} />
-          <TextField label={t("po.next")} value={next} dir="ltr" inputMode="numeric" disabled={!canPlan} onChange={(v) => setNext(v.replace(/\D/g, ""))} />
+          <div className="stack" style={{ gap: 8 }}>
+            <TextField label={t("po.next")} value={next} dir="ltr" inputMode="numeric" disabled={!canPlan} onChange={(v) => setNext(v.replace(/\D/g, ""))} />
+            <div className="row small" style={{ gap: 8 }} title={t("po.yearlyHint")}>
+              <Switch label={t("po.yearly")} checked={yearly} disabled={!canPlan} onChange={setYearly} /><span>{t("po.yearly")}</span></div>
+          </div>
           {canPlan && <div className="row" style={{ gap: 8, alignSelf: "flex-end", paddingBottom: 22 }}>
             <Button busy={busy === "save"} onClick={async () => {
               setBusy("save"); setErr({}); setMsg(null);
-              try { await put(`/api/sites/${siteId}/batch-numbering`, { pattern: pattern || null, next: Number(next) || 1 }); toast(t("po.patternSaved")); onDone(); }
+              try { await put(`/api/sites/${siteId}/batch-numbering`, { pattern: pattern || null, next: Number(next) || 1, yearly }); toast(t("po.patternSaved")); onDone(); }
               catch (e) { setMsg(errorText(e, t)); setErr((e as { fields?: Record<string, string> }).fields ?? {}); } finally { setBusy(null); }
             }}>{t("po.savePattern")}</Button>
             <Button variant="primary" busy={busy === "fill"} disabled={!numbering.pattern} onClick={async () => {
@@ -235,14 +240,19 @@ function CreateDialog({ planId, batchIds, templates, onClose, onDone }: {
           try {
             const r = await post<typeof result & object>(`/api/plans/${planId}/orders`, { batch_ids: batchIds, kinds, template_ids: tpl });
             // A batch without materials of a kind simply has no order of that kind; only list real skips.
-            setResult({ ...r, skipped: r.skipped.filter((x) => x.reason !== "no_components") }); toast(t("po.created", { n: r.created.length }));
+            setResult(r); toast(t("po.created", { n: r.created.length }));
           } catch (e) { setErr(errorText(e, t)); } finally { setBusy(false); }
         }}>{t("po.create")}</Button></>}>
       {result ? (
         <div className="stack">
-          <p><strong>{t("po.created", { n: result.created.length })}</strong>{result.skipped.length ? ` · ${t("po.skipped", { n: result.skipped.length })}` : ""}</p>
-          {result.skipped.length > 0 && <ul className="small muted" style={{ margin: 0, maxHeight: 220, overflow: "auto" }}>
-            {result.skipped.map((s, i) => <li key={i}>{s.batch}{s.kind ? ` · ${t(`ot.kind.${s.kind}` as StringKey)}` : ""}: {t(`po.reasons.${s.reason}` as StringKey)}</li>)}
+          <p><strong>{t("po.created", { n: result.created.length })}</strong></p>
+          {/* A batch without materials of a kind simply has no order of that kind: say so once per kind. */}
+          {KINDS.map((k) => {
+            const n = result.skipped.filter((x) => x.kind === k && x.reason === "no_components").length;
+            return n > 0 ? <Notice key={k}>{t("po.notNeeded", { kind: t(`ot.kind.${k}` as StringKey), n, types: t(`po.types.${k}` as StringKey) })}</Notice> : null;
+          })}
+          {result.skipped.some((x) => x.reason !== "no_components") && <ul className="small muted" style={{ margin: 0, maxHeight: 220, overflow: "auto" }}>
+            {result.skipped.filter((x) => x.reason !== "no_components").map((s, i) => <li key={i}>{s.batch}{s.kind ? ` · ${t(`ot.kind.${s.kind}` as StringKey)}` : ""}: {t(`po.reasons.${s.reason}` as StringKey)}</li>)}
           </ul>}
         </div>
       ) : (
