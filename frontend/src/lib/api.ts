@@ -21,6 +21,24 @@ export function onAuthError(fn: Listener) {
   return () => authListeners.delete(fn);
 }
 
+/** The last few errors the user met in this tab, so the Assistant can explain them. Kept in memory only. */
+export interface SeenError { at: string; page: string; action: string; code: string; message: string; fields: Record<string, string> }
+const seen: SeenError[] = [];
+const QUIET = /^\/api\/(assistant|auth)\//;
+function remember(method: string, path: string, err: ApiError) {
+  if (QUIET.test(path) || err.status === 401 || err.code === "network") return;
+  const action = `${method} ${path.split("?")[0].replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, ":id")}`;
+  const fields: Record<string, string> = {};
+  Object.entries(err.fields ?? {}).slice(0, 8).forEach(([k, v]) => { fields[k.slice(0, 60)] = String(v).slice(0, 300); });
+  seen.unshift({ at: new Date().toISOString(), page: typeof location !== "undefined" ? location.pathname : "", action,
+    code: err.code, message: String(err.message).slice(0, 400), fields });
+  seen.length = Math.min(seen.length, 5);
+}
+export function recentErrors(maxAgeMinutes = 30): SeenError[] {
+  const since = Date.now() - maxAgeMinutes * 60_000;
+  return seen.filter((e) => Date.parse(e.at) >= since);
+}
+
 export async function api<T = any>(method: string, path: string, body?: unknown): Promise<T> {
   let res: Response;
   try {
@@ -43,6 +61,7 @@ export async function api<T = any>(method: string, path: string, body?: unknown)
     if (res.status === 401 && path !== "/api/auth/login" && path !== "/api/auth/me") {
       authListeners.forEach((fn) => fn(err));
     }
+    remember(method, path, err);
     throw err;
   }
   return data as T;

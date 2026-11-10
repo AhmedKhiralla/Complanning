@@ -93,3 +93,35 @@ def test_switch_off_limit_and_admin_tools(co, platform):
     # Questions are not stored, and nothing about them goes to the audit trail.
     _, audit, _ = a.get("/api/audit?page_size=50")
     assert not any("assistant" in (e.get("entity") or "") or "ai_usage" in (e.get("entity") or "") for e in audit["items"])
+
+
+def test_recent_errors_and_bom_versions(co, fake_ai, db_url):
+    """Errors the user just saw reach the model, and it can read every BOM version with its status and dates."""
+    import psycopg
+    conn = psycopg.connect(db_url)
+    conn.execute("DELETE FROM ai_usage")          # earlier tests used up today's questions
+    conn.commit()
+    conn.close()
+    a = co["admin"]
+    _, items, _ = a.get("/api/items")
+    fg = next(i for i in items["items"] if i["code"] == "FG-PCM-20-EG")
+    _, boms, _ = a.get("/api/boms")
+    row = next(b for b in boms["items"] if b["code"] == "FG-PCM-20-EG")
+    active = next(v for v in row["versions"] if v["status"] == "active")
+    _, full, _ = a.get(f"/api/boms/{active['id']}")
+    status, draft, _ = a.post(f"/api/items/{fg['id']}/boms", {"batch_size": float(full["batch_size"]), "batch_uom_id": full["batch_uom_id"]})
+    assert status == 200, draft
+    fake_ai.requests.clear()
+    err = {"at": "2026-11-06T13:40:00Z", "page": "/master/boms/x", "action": "POST /api/boms/:id/activate", "code": "invalid",
+           "message": "Some fields need attention.", "fields": {"valid_from": "Choose 2026-11-06 or later."}}
+    status, r, _ = ask(a, "Why can't I activate the new BOM version?", site_id=co["sid"], recent_errors=[err])
+    assert status == 200, r
+    system = fake_ai.requests[0]["body"]["messages"][0]["content"]
+    assert "Choose 2026-11-06 or later." in system and "POST /api/boms/:id/activate" in system
+    assert any(u["kind"] == "bom" for u in r["used"])
+    assert '"status": "draft"' in r["answer"] or "draft" in r["answer"]
+    fake_ai.requests.clear()
+    _, r, _ = ask(a, "Is my setup complete?", site_id=co["sid"])
+    tool_result = next(m["content"] for m in fake_ai.requests[-1]["body"]["messages"] if m["role"] == "tool")
+    assert "FG-PCM-20-EG: BOM version" in tool_result and "still a draft" in tool_result
+    assert a.call("DELETE", f"/api/boms/{draft['id']}")[0] in (200, 204)

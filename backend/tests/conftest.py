@@ -124,6 +124,8 @@ class FakeAI:
         call = None
         if "late" in text:
             call = ("explain_delivery", {"product_code": "FG-PCM-20-EG"})
+        elif "bom" in text:
+            call = ("get_bom", {"item_code": "FG-PCM-20-EG"})
         elif "how" in text:
             call = ("search_help", {"query": text})
         elif "setup" in text:

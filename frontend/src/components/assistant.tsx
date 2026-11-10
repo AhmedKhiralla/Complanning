@@ -1,7 +1,7 @@
 /* AI assistant: a chat panel that answers from the user's own data (read-only). */
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { LuArrowUp, LuBot, LuDatabase, LuRotateCcw, LuSparkles, LuX } from "react-icons/lu";
-import { post } from "../lib/api";
+import { post, recentErrors } from "../lib/api";
 import { useI18n } from "../lib/i18n";
 import { usePath } from "../lib/router";
 import { useSession } from "../lib/session";
@@ -55,6 +55,11 @@ function Rich({ text }: { text: string }) {
 }
 
 function suggestions(path: string): StringKey[] {
+  const fix: StringKey[] = recentErrors().length ? ["ai.sg.lastError"] : [];
+  return [...fix, ...pageSuggestions(path)].slice(0, 3);
+}
+
+function pageSuggestions(path: string): StringKey[] {
   if (/^\/plans\/[0-9a-f-]{36}$/.test(path)) return ["ai.sg.late", "ai.sg.warnings", "ai.sg.busiest"];
   if (path.startsWith("/planning/requirements")) return ["ai.sg.short", "ai.sg.order"];
   if (path.startsWith("/planning/stock")) return ["ai.sg.expiring", "ai.sg.short"];
@@ -94,6 +99,7 @@ export function Assistant() {
     try {
       const r = await post<{ answer: string; used: Used[]; remaining: number }>("/api/assistant/chat", {
         messages: [...history, { role: "user", content: question }].slice(-12), site_id: siteId, plan_id: planId, page: path,
+        recent_errors: recentErrors(),
       });
       setTurns([...next, { role: "assistant", content: r.answer, used: r.used }]);
       setRemaining(r.remaining);

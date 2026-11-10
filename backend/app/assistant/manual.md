@@ -665,7 +665,7 @@ A released plan issues **manufacturing orders** (raw materials, for dispensing) 
 
 **Templates** (Company settings › **Production orders**, administrators): one per kind, with the title, **Format number** (printed on every page), page orientation, logo, footer note, the **Number pattern** for order numbers (`{BATCH}`, `{YY}`, `{MM}`, `{DD}`, `{CODE}`, `{SEQ:4}`), the header fields and their labels and order, how many fields per row, the material table columns and their labels and order, which material types are listed, the approval levels and their titles, **Electronic approval in Complanning**, and the remarks heading and blank lines. **Preview** shows a sample order with the template as edited. Orders keep the layout they were approved or issued with.
 
-## 13. Excel import and export, and sample data
+## 13. Excel import and export, sample data and the Assistant
 
 ### 13.1 Excel import
 
@@ -705,6 +705,16 @@ The sample is a small pharmaceutical plant for training and testing: paracetamol
 | **Load sample sales plan and stock** (Sales plan or Stock) | Company administrator, site with sample products and neither a sales plan nor stock | Six months of sales plan from the current month and a stock snapshot |
 
 The sample stock is deliberately short of four materials, so plans show shortage warnings. Load the sample into a test company, not your live one: sample records are real records in the audit trail.
+
+### 13.4 The Assistant
+
+The **Assistant** button (bottom corner) opens a chat that answers from your own data: plans, deliveries, batches, net requirements, stock, items, bills of materials and setup, and from this manual. It reads only what you are allowed to see and never changes anything; when a change is needed it names the page and button. It answers in English or Arabic, as you ask.
+
+- **When something did not work**, ask "Why didn't my last action work?". The Assistant sees the errors the app showed you in the last 30 minutes (which action, the message and the reason given for each field) and explains the cause and the fix. After an error, this question appears as the first suggestion. The errors are kept only in your open browser tab and are sent only with a question you ask.
+- **Bills of materials:** it reads every version of a product's bill of materials with its status (draft, active, archived), dates and lines, so it can tell, for example, that version 3 is still a draft and plans use version 2, or that an inactive item is still used. On a bill-of-materials page it knows which product you are looking at.
+- **Setup check:** "Check my setup" lists missing or unusual data, including drafts that were never activated and inactive items still used in active bills of materials.
+
+Each company administrator can switch the Assistant off under Company settings › Features, and see the questions used per day under Company settings. Every user has a daily number of questions.
 
 ## 14. Audit trail and 21 CFR Part 11 controls
 

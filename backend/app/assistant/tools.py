@@ -220,6 +220,9 @@ def find_items(ctx: Ctx, query: str) -> dict:
                      " JOIN uoms u ON u.id = b.batch_uom_id WHERE b.item_id = %s AND b.status = 'active'", iid)
         if r["type"] in ("wip", "semi_finished", "finished"):
             item["active_bom"] = ctx.clean(bom) if bom else None
+            draft = tx.val("SELECT version FROM boms WHERE item_id = %s AND status = 'draft'", iid)
+            if draft:
+                item["draft_bom_version"] = draft
             if ctx.site:
                 item["routing_steps_here"] = [ctx.clean(s) for s in tx.q(
                     "SELECT s.seq, s.name, s.uninterrupted, s.with_previous AS runs_with_previous_step, string_agg(r.code, ', ' ORDER BY sr.preferred DESC, r.code) AS machines"
@@ -246,6 +249,40 @@ def get_stock(ctx: Ctx, item_code: str) -> dict:
     return {"stock_counted_on": ctx.t(as_of), "lots": [ctx.clean(r) for r in rows]}
 
 
+def get_bom(ctx: Ctx, item_code: str) -> dict:
+    """Every bill-of-materials version of one item: status, dates, batch and lines, with the rules for activating."""
+    tx = ctx.call.tx
+    item = tx.one("SELECT id, code, name_en, type, active FROM items WHERE upper(code) = upper(%s)", item_code.strip())
+    if not item:
+        return {"error": f"No item with code {item_code}."}
+    versions = []
+    for b in tx.q("SELECT b.id, b.version, b.status, b.valid_from, b.valid_to, b.batch_size, u.code AS uom, b.yield_pct,"
+                  " b.batch_mode, b.min_batch_pct, b.notes, b.updated_at FROM boms b JOIN uoms u ON u.id = b.batch_uom_id"
+                  " WHERE b.item_id = %s ORDER BY b.version DESC", item["id"]):
+        lines = tx.q("SELECT l.line_no, c.code, c.name_en, c.type, c.active, l.quantity, u.code AS uom, l.assay_compensated,"
+                     " l.is_compensating, l.overage_pct FROM bom_lines l JOIN items c ON c.id = l.component_item_id"
+                     " JOIN uoms u ON u.id = l.uom_id WHERE l.bom_id = %s ORDER BY l.line_no", b.pop("id"))
+        v = ctx.clean(b)
+        v["lines"] = [ctx.clean(x) for x in lines]
+        versions.append(v)
+    notes = []
+    active = next((v for v in versions if v["status"] == "active"), None)
+    draft = next((v for v in versions if v["status"] == "draft"), None)
+    if draft:
+        notes.append(f"Version {draft['version']} is a draft: plans still use "
+                     + (f"version {active['version']}" if active else "no version (there is no active one)")
+                     + f" until version {draft['version']} is activated (Bills of materials › {item['code']} › Activate).")
+    if active:
+        for ln in active["lines"]:
+            if not ln.get("active", True):
+                notes.append(f"The active version uses {ln['code']}, which is inactive; it is still planned until a new version without it is activated.")
+    ctx.used.append({"kind": "bom", "label": item["code"]})
+    return {"item": ctx.clean({k: item[k] for k in ("code", "name_en", "type", "active")}), "versions": versions, "notes": notes,
+            "activation_rules": "Activate asks for a Valid from date. It can be the same day the current active version started "
+                                "(the new version replaces it that day) or later, never earlier. The previous version is archived "
+                                "and ends the day before (or that same day). Active versions cannot be edited; use New version."}
+
+
 def check_setup(ctx: Ctx) -> dict:
     tx = ctx.call.tx
     from ..routers.guide import progress as setup_progress
@@ -260,6 +297,14 @@ def check_setup(ctx: Ctx) -> dict:
     for r in tx.q("SELECT code FROM items i WHERE active AND type IN ('wip','semi_finished','finished')"
                   " AND NOT EXISTS (SELECT 1 FROM boms b WHERE b.item_id = i.id AND b.status = 'active') LIMIT 10"):
         issues.append(f"{r['code']}: no active bill of materials")
+    for r in tx.q("SELECT i.code, d.version FROM boms d JOIN items i ON i.id = d.item_id WHERE d.status = 'draft' AND i.active"
+                  " AND d.version > coalesce((SELECT max(a.version) FROM boms a WHERE a.item_id = d.item_id AND a.status = 'active'), 0)"
+                  " ORDER BY i.code LIMIT 10"):
+        issues.append(f"{r['code']}: BOM version {r['version']} is still a draft, so plans use the older active version")
+    for r in tx.q("SELECT DISTINCT p.code AS parent, c.code FROM boms b JOIN bom_lines l ON l.bom_id = b.id"
+                  " JOIN items c ON c.id = l.component_item_id JOIN items p ON p.id = b.item_id"
+                  " WHERE b.status = 'active' AND NOT c.active ORDER BY 1 LIMIT 10"):
+        issues.append(f"{r['parent']}: its active BOM uses {r['code']}, which is inactive (it is still planned)")
     for r in tx.q("SELECT code FROM items WHERE active AND type IN ('raw_material','packaging') AND lead_time_days IS NULL"
                   " AND NOT not_stock_controlled LIMIT 10"):
         issues.append(f"{r['code']}: no purchase lead time (shortages cannot be dated)")
@@ -307,8 +352,13 @@ TOOLS = {
                    _s("", {"query": {"type": "string"}}, ["query"])),
     "get_stock": (get_stock, "Stock lots of one item at the current site: lot, status, quantity, dates, assay and LOD.",
                   _s("", {"item_code": {"type": "string"}}, ["item_code"])),
+    "get_bom": (get_bom, "All bill-of-materials versions of one item by code: status (draft, active, archived), valid from/to, "
+                         "batch size, yield and every line (component, type, active or not, quantity, assay, overage), with notes "
+                         "about drafts waiting to be activated and inactive components, and the rules for activating a version.",
+                _s("", {"item_code": {"type": "string"}}, ["item_code"])),
     "check_setup": (check_setup, "Check the company's setup: which getting-started steps are done and possible data problems "
-                                 "(missing BOMs, cleaning groups, lead times, prices, unqualified routing steps, unusual values).",
+                                 "(missing BOMs, BOM drafts not activated, inactive components in active BOMs, cleaning groups, "
+                                 "lead times, prices, unqualified routing steps, unusual values).",
                     _s("")),
 }
 
