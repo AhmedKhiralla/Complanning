@@ -19,7 +19,7 @@ export interface SimMaterialData {
   materials: { batch_id: string; item_id: string; quantity: number }[];
 }
 
-export interface Column { key: string; label: string | null; machines: string[] }
+export interface Column { key: string; label: string | null; machines: string[]; unused?: boolean }
 
 export interface Model {
   t0: number; t1: number; batches: SimBatch[]; byId: Map<string, SimBatch>; events: number[];
@@ -29,6 +29,7 @@ export interface Model {
 const stageOf = (b: PBatch): Stage => (b.type === "wip" || b.type === "semi_finished" ? b.type : "finished");
 
 export function buildModel(plan: PlanFull): Model {
+  const machineCode = new Map(plan.machines.map((m) => [m.id, m.code]));
   const opsBy = new Map<string, POp[]>();
   for (const o of plan.operations) {
     const l = opsBy.get(o.batch_id) ?? [];
@@ -95,8 +96,21 @@ export function buildModel(plan: PlanFull): Model {
   }
   for (const l of opsByMachine.values()) l.sort((a, c) => startOf(a) - startOf(c));
 
-  // Automatic layout: machines in columns by area, areas ordered by where they come in the process
-  // (bulk steps first, then semi-finished, then finished; by step number inside each level).
+  // Machine-to-machine flow: consecutive steps of a batch, and the last step of a supplier batch
+  // to the first step of the batch that uses it.
+  const flowSet = new Set<string>();
+  for (const x of batches) {
+    const runs = x.segs.filter((s) => s.kind === "run");
+    for (let i = 1; i < runs.length; i++) if (runs[i - 1].machine !== runs[i].machine) flowSet.add(`${runs[i - 1].machine}>${runs[i].machine}`);
+    for (const sid of x.suppliers) {
+      const sup = plan.operations.filter((o) => o.batch_id === sid).sort((a, c) => c.seq - a.seq)[0];
+      if (sup && runs[0] && sup.resource_id !== runs[0].machine) flowSet.add(`${sup.resource_id}>${runs[0].machine}`);
+    }
+  }
+  const flows = Array.from(flowSet).map((s) => s.split(">") as [string, string]);
+
+  // Automatic layout as a process flow: one column per process step, from left to right in the order
+  // products move. Machines that can do the same step (alternatives) share a column.
   const level = new Map(plan.batches.map((b) => [b.id, b.level]));
   const maxLevel = Math.max(0, ...plan.batches.map((b) => b.level));
   const order = new Map<string, number[]>();
@@ -104,34 +118,55 @@ export function buildModel(plan: PlanFull): Model {
     const k = (maxLevel - (level.get(o.batch_id) ?? 0)) * 100 + o.seq;
     order.set(o.resource_id, [...(order.get(o.resource_id) ?? []), k]);
   }
-  const mKey = (id: string) => { const l = order.get(id); return l?.length ? l.reduce((a, c) => a + c, 0) / l.length : Infinity; };
-  const areas = new Map<string, string[]>();
-  for (const m of plan.machines) {
-    const a = (m.area ?? "").trim();
-    areas.set(a, [...(areas.get(a) ?? []), m.id]);
+  // Alternatives: machines listed for the same routing step join one group.
+  const parent = new Map<string, string>(plan.machines.map((m) => [m.id, m.id]));
+  const find = (id: string): string => { const p = parent.get(id) ?? id; if (p === id) return id; const r = find(p); parent.set(id, r); return r; };
+  const unite = (a: string, b: string) => { if (!parent.has(a) || !parent.has(b)) return; const ra = find(a), rb = find(b); if (ra !== rb) parent.set(rb, ra); };
+  for (const o of plan.operations) for (const e of o.eligible ?? []) unite(o.resource_id, e);
+  const groups = new Map<string, string[]>();
+  for (const m of plan.machines) groups.set(find(m.id), [...(groups.get(find(m.id)) ?? []), m.id]);
+  const gKey = new Map<string, number>();
+  for (const [g, ids] of groups) {
+    const ks = ids.flatMap((id) => order.get(id) ?? []);
+    gKey.set(g, ks.length ? ks.reduce((a, c) => a + c, 0) / ks.length : Infinity);
   }
-  const columns: Column[] = Array.from(areas.entries()).map(([a, ids]) => {
-    const sorted = ids.slice().sort((x, y) => mKey(x) - mKey(y));
-    const used = sorted.map(mKey).filter((v) => v !== Infinity);
-    return { key: a || "~", label: a || null, machines: sorted, k: used.length ? Math.min(...used) : Infinity };
-  }).sort((x, y) => x.k - y.k || x.key.localeCompare(y.key)).map(({ key, label, machines }) => ({ key, label, machines }));
-  // Split very tall columns so the floor stays readable.
+  // Rank = longest path through the flow, using only edges that go forward in the process (no loops).
+  const gEdges = new Map<string, Set<string>>();
+  for (const [a, b] of flows) {
+    const ga = find(a), gb = find(b);
+    if (ga === gb || !(gKey.get(ga)! < gKey.get(gb)!)) continue;
+    gEdges.set(ga, (gEdges.get(ga) ?? new Set()).add(gb));
+  }
+  const rank = new Map<string, number>();
+  const used = Array.from(groups.keys()).filter((g) => gKey.get(g) !== Infinity).sort((a, b) => gKey.get(a)! - gKey.get(b)!);
+  for (const g of used) rank.set(g, 0);
+  for (const g of used) for (const n of gEdges.get(g) ?? []) rank.set(n, Math.max(rank.get(n) ?? 0, rank.get(g)! + 1));
+  const nCols = used.length ? Math.max(...used.map((g) => rank.get(g)!)) + 1 : 0;
+  const colGroups: string[][] = Array.from({ length: nCols }, () => []);
+  for (const g of used) colGroups[rank.get(g)!].push(g);
+  // Inside a column, keep each group near the machines that feed it (fewer crossing arrows).
+  const yOf = new Map<string, number>();
+  const preds = new Map<string, string[]>();
+  for (const [a, b] of flows) preds.set(b, [...(preds.get(b) ?? []), a]);
+  const stepName = new Map<string, string[]>();
+  for (const o of plan.operations) stepName.set(o.resource_id, [...(stepName.get(o.resource_id) ?? []), o.step_name]);
   const cols: Column[] = [];
-  for (const c of columns) {
-    for (let i = 0; i < c.machines.length; i += 5) cols.push({ key: `${c.key}#${i}`, label: i === 0 ? c.label : null, machines: c.machines.slice(i, i + 5) });
-  }
-
-  const flowSet = new Set<string>();
-  for (const x of batches) {
-    const runs = x.segs.filter((s) => s.kind === "run");
-    for (let i = 1; i < runs.length; i++) if (runs[i - 1].machine !== runs[i].machine) flowSet.add(`${runs[i - 1].machine}>${runs[i].machine}`);
-    // Supplier batches feed the first machine of this batch.
-    for (const sid of x.suppliers) {
-      const sup = plan.operations.filter((o) => o.batch_id === sid).sort((a, c) => c.seq - a.seq)[0];
-      if (sup && runs[0] && sup.resource_id !== runs[0].machine) flowSet.add(`${sup.resource_id}>${runs[0].machine}`);
-    }
-  }
-  const flows = Array.from(flowSet).map((s) => s.split(">") as [string, string]);
+  colGroups.forEach((gs, ci) => {
+    const bary = (g: string) => {
+      const ys = groups.get(g)!.flatMap((id) => (preds.get(id) ?? []).map((p) => yOf.get(p)).filter((v): v is number => v !== undefined));
+      return ys.length ? ys.reduce((a, c) => a + c, 0) / ys.length : gKey.get(g)!;
+    };
+    gs.sort((a, b) => bary(a) - bary(b) || gKey.get(a)! - gKey.get(b)!);
+    const ids = gs.flatMap((g) => groups.get(g)!.slice().sort((a, b) => (machineCode.get(a) ?? "").localeCompare(machineCode.get(b) ?? "")));
+    ids.forEach((id, i) => yOf.set(id, i));
+    const names = ids.flatMap((id) => stepName.get(id) ?? []);
+    const count = new Map<string, number>();
+    for (const n of names) count.set(n, (count.get(n) ?? 0) + 1);
+    const top = Array.from(count.entries()).sort((a, b) => b[1] - a[1]).map(([n]) => n);
+    cols.push({ key: `c${ci}`, label: top.slice(0, 2).join(" · ") || null, machines: ids });
+  });
+  const idle = Array.from(groups.keys()).filter((g) => gKey.get(g) === Infinity).flatMap((g) => groups.get(g)!);
+  if (idle.length) cols.push({ key: "unused", label: "", machines: idle, unused: true });
 
   return { t0, t1, batches, byId: new Map(batches.map((x) => [x.b.id, x])), events, opsByMachine, columns: cols, flows, unscheduled };
 }

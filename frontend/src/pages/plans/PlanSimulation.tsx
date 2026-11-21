@@ -89,9 +89,13 @@ export function PlanSimulation({ plan, tz, onShowBatch }: { plan: PlanFull; tz: 
   const X = (x: number, w: number) => (rtl ? W - x - w : x);
   const cardAt = useMemo(() => {
     const m = new Map<string, { x: number; y: number }>();
-    model.columns.forEach((c, ci) => c.machines.forEach((id, ri) => m.set(id, { x: PAD + ci * COL_W, y: PAD + HEAD + ri * (CARD_H + CARD_GAP) })));
+    // Centre each column on the tallest one, so a step with one machine sits between the machines it feeds.
+    model.columns.forEach((c, ci) => {
+      const off = c.unused ? 0 : ((rowsMax - c.machines.length) * (CARD_H + CARD_GAP)) / 2;
+      c.machines.forEach((id, ri) => m.set(id, { x: PAD + ci * COL_W, y: PAD + HEAD + off + ri * (CARD_H + CARD_GAP) }));
+    });
     return m;
-  }, [model.columns]);
+  }, [model.columns, rowsMax]);
   const innerW = W - PAD * 2, gap = 16;
   const areaBox = {
     stored: { x: PAD, y: bandY, w: Math.round(innerW * 0.45), h: BAND_H },
@@ -297,8 +301,8 @@ export function PlanSimulation({ plan, tz, onShowBatch }: { plan: PlanFull; tz: 
                 <path d="M0,0 L10,5 L0,10 z" /></marker></defs>
               {flowPaths}
             </svg>
-            {model.columns.map((c, ci) => c.label !== null && (
-              <div key={c.key} className="sim-colhead small" style={{ left: X(PAD + ci * COL_W, CARD_W), top: PAD, width: CARD_W }}>{c.label || t("sim.other")}</div>
+            {model.columns.map((c, ci) => (c.label !== null || c.unused) && (
+              <div key={c.key} className="sim-colhead small" style={{ left: X(PAD + ci * COL_W, CARD_W), top: PAD, width: CARD_W }}>{c.unused ? t("sim.unused") : c.label || t("sim.other")}</div>
             ))}
             {Array.from(cardAt.entries()).map(([id, c]) => {
               const m = machines.get(id)!;
