@@ -14,27 +14,28 @@ import { usePerms, useSession } from "../../lib/session";
 import { nameOf, type ItemType } from "../../lib/types";
 import { OBJ_ICON, type PlanRow, type Warning } from "./Plans";
 import { PlanOrders } from "../orders/PlanOrders";
+import { PlanSimulation } from "./PlanSimulation";
 
-interface PBatch {
+export interface PBatch {
   id: string; batch_no: string; item_id: string; code: string; name_en: string; name_ar: string | null; type: ItemType;
   cleaning_group: string | null; uom: string; level: number; quantity: number; bom_version: number | null; need_by: string | null;
   start_at: string | null; end_at: string | null; available_at: string | null; ship_at: string | null;
   status: "scheduled" | "unscheduled"; problem: string | null; value: number | null; currency: string | null;
   ordinal: number; locked: boolean; expires_on: string | null; material_cost: number | null; lot_no?: string | null;
 }
-interface POp {
+export interface POp {
   id: string; batch_id: string; seq: number; step_name: string; resource_id: string; changeover_start: string | null;
   changeover_end: string | null; changeover_minutes: number; wait_minutes: number; changeover_kind: string | null;
   verification: string | null; reclean_minutes: number; start_at: string; end_at: string; work_minutes: number;
   locked: boolean; eligible: string[];
 }
-interface PDemand {
+export interface PDemand {
   id: string; item_id: string; code: string; name_en: string; name_ar: string | null; uom: string; market: string; month: string;
   due_date: string; requested: number; quantity: number; from_stock: number; batches: string | null; available_at: string | null;
   late_hours: number | null; on_time: boolean; before_rounding: number | null; units_per_shipper: number | null; pack_size: number | null;
   on_time_qty: number | null;
 }
-interface PlanFull extends PlanRow {
+export interface PlanFull extends PlanRow {
   batches: PBatch[]; operations: POp[]; links: { supplier_id: string; consumer_id: string; quantity: number }[];
   demand: PDemand[]; machines: { id: string; code: string; name_en: string; name_ar: string | null; area: string | null }[];
   downtime: { resource_id: string; starts_at: string; ends_at: string; reason: string }[];
@@ -367,7 +368,7 @@ export function PlanView({ planId }: { planId: string }) {
   const toast = useToast();
   const dur = useDuration();
   const data = useLoad(() => get<PlanFull>(`/api/plans/${planId}`), [planId]);
-  const [tab, setTab] = useState<"gantt" | "deliveries" | "batches" | "orders" | "warnings" | "machines">("gantt");
+  const [tab, setTab] = useState<"gantt" | "simulation" | "deliveries" | "batches" | "orders" | "warnings" | "machines">("gantt");
   const [selected, setSelected] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -466,7 +467,7 @@ export function PlanView({ planId }: { planId: string }) {
       </div>
 
       <div className="tabs" role="tablist" style={{ marginTop: 20 }}>
-        {(["gantt", "deliveries", "batches", "orders", "warnings", "machines"] as const).map((x) => (
+        {(["gantt", "simulation", "deliveries", "batches", "orders", "warnings", "machines"] as const).map((x) => (
           <button key={x} type="button" role="tab" className="tab" aria-selected={tab === x} onClick={() => setTab(x)}>
             {t(`pv.tab.${x}` as never)}{x === "warnings" && warnings.length > 0 && <Badge tone="warn"> {warnings.length}</Badge>}
           </button>
@@ -481,6 +482,8 @@ export function PlanView({ planId }: { planId: string }) {
         </div>
         {selected && <BatchDetail plan={p} id={selected} tz={tz} onSelect={setSelected} editable={editable && !busy} onLock={lock} />}
       </>}
+
+      {tab === "simulation" && <PlanSimulation plan={p} tz={tz} onShowBatch={(id) => { setSelected(id); setTab("gantt"); }} />}
 
       {tab === "deliveries" && <>
         {otif?.unknown ? <Notice>{t("pv.otifOld")}</Notice> : null}

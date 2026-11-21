@@ -1209,3 +1209,93 @@ body:has(.ai-fab) .content { padding-bottom: 96px; }
 .po-numbering summary h3 { display: inline-flex; align-items: center; gap: 6px; margin: 0; }
 .po-num-form { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) auto; gap: 12px; align-items: start; }
 @media (max-width: 720px) { .po-num-form { grid-template-columns: 1fr; } .ot-row { grid-template-columns: 26px minmax(0, 1fr) 30px 30px; } .ot-row > .mono-id { display: none; } }
+
+/* ---------------------------------------------------------------- Plan simulation */
+.text-ok { color: var(--ok); }
+.sim { --st-wip: #2f6fb5; --st-semi: #0f8b8d; --st-fin: #67138c; outline: none; }
+:root[data-theme="dark"] .sim { --st-wip: #6aa8ea; --st-semi: #4cc7c4; --st-fin: #c6a2ee; }
+.sim .link-btn { background: none; border: 0; padding: 0 6px 0 0; color: var(--brand); cursor: pointer; font: inherit; text-decoration: underline; }
+.sim-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 18px; padding: 10px 14px; position: sticky; top: calc(var(--topbar) + 4px); z-index: 5; }
+.sim-clock { display: flex; flex-direction: column; min-width: 190px; }
+.sim-clock strong { font-size: 18px; font-variant-numeric: tabular-nums; }
+.sim-controls { display: inline-flex; gap: 6px; }
+.sim-controls .btn[aria-pressed="true"] { background: var(--brand-soft); border-color: var(--brand-line); color: var(--brand); }
+.sim-speed { display: inline-flex; align-items: center; gap: 8px; }
+.sim-speed .input { width: auto; padding-block: 4px; }
+.sim-slider { flex: 1 1 260px; min-width: 200px; accent-color: var(--brand-solid); }
+.sim-keys { flex-basis: 100%; }
+.sim-main { position: relative; margin-top: 12px; }
+.sim-overlay { position: absolute; top: 46px; inset-inline-end: 12px; width: 340px; max-height: calc(100% - 60px); overflow: auto; z-index: 6;
+  border-radius: var(--r-lg); box-shadow: var(--shadow-pop); }
+.sim-overlay .panel { margin: 0; }
+.sim-analysis { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-top: 12px; align-items: start; }
+.sim-floor-wrap { overflow: auto; padding: 0; }
+.sim-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 10px 14px; border-bottom: 1px solid var(--line); color: var(--text-2); }
+.sim-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sim-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-inline-end: 6px; vertical-align: -1px; }
+.sim-dot.st-wip { background: var(--st-wip); } .sim-dot.st-semi_finished { background: var(--st-semi); } .sim-dot.st-finished { background: var(--st-fin); }
+.sim-dot.m-running { background: var(--ok); } .sim-dot.m-changeover { background: var(--saffron); }
+.sim-dot.m-down { background: var(--danger); } .sim-dot.m-idle { background: var(--line-strong); }
+.sim-floor { position: relative; margin: 0; background:
+  radial-gradient(circle, var(--line) 1px, transparent 1.2px) 0 0 / 18px 18px, var(--surface); }
+.sim-lines { position: absolute; inset: 0; pointer-events: none; }
+.sim-flow { fill: none; stroke: var(--line-strong); stroke-width: 1.6; stroke-dasharray: 5 4; }
+.sim-lines marker path { fill: var(--line-strong); }
+.sim-colhead { position: absolute; font-weight: 600; color: var(--text-2); text-transform: uppercase; letter-spacing: .04em; font-size: 11.5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sim-card { position: absolute; box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; text-align: start; padding: 8px 10px; border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--line-strong); border-inline-start: 5px solid var(--line-strong); cursor: pointer;
+  color: var(--text); font: inherit; box-shadow: 0 1px 2px rgba(29,22,40,.06); transition: border-color .25s, background-color .25s; }
+.sim-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sim-card.sel { box-shadow: 0 0 0 2px var(--brand); }
+.sim-card.m-running { border-inline-start-color: var(--ok); background: color-mix(in srgb, var(--ok-soft) 60%, var(--surface)); }
+.sim-card.m-changeover { border-inline-start-color: var(--saffron); background: repeating-linear-gradient(135deg, var(--saffron-soft) 0 8px, var(--surface) 8px 16px); }
+.sim-card.m-down { border-inline-start-color: var(--danger); background: var(--danger-soft); }
+.sim-card-head { height: 20px; line-height: 20px; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.sim-card-head strong { font-size: 13.5px; white-space: nowrap; }
+.sim-state { font-size: 11px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sim-card.m-running .sim-state { color: var(--ok); font-weight: 600; }
+.sim-card.m-changeover .sim-state { color: var(--warn); font-weight: 600; }
+.sim-card.m-down .sim-state { color: var(--danger); font-weight: 600; }
+.sim-card-name { line-height: 16px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+.sim-prog { position: absolute; top: 59px; inset-inline-start: 72px; inset-inline-end: 10px; height: 6px; border-radius: 2px; background: var(--surface-3); overflow: hidden; }
+.sim-prog span { display: block; height: 100%; background: var(--ok); }
+.sim-co { position: absolute; top: 54px; line-height: 16px; inset-inline: 10px; color: var(--warn); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; }
+.sim-more { position: absolute; bottom: 10px; color: var(--text-2); font-size: 11px; font-weight: 600; }
+.sim-area { position: absolute; box-sizing: border-box; border: 1.5px dashed var(--line-strong); border-radius: var(--r-lg); padding: 10px 12px;
+  background: color-mix(in srgb, var(--surface-2) 70%, transparent); }
+.sim-area.a-qc { border-color: color-mix(in srgb, var(--saffron) 55%, var(--line)); background: color-mix(in srgb, var(--saffron-soft) 70%, transparent); }
+.sim-area.a-shipped { border-color: color-mix(in srgb, var(--ok) 45%, var(--line)); background: color-mix(in srgb, var(--ok-soft) 70%, transparent); }
+.sim-area-head { display: flex; align-items: center; gap: 8px; }
+.sim-area-head svg { width: 16px; height: 16px; color: var(--text-2); }
+.sim-count { margin-inline-start: auto; font-weight: 700; font-variant-numeric: tabular-nums; background: var(--surface); border: 1px solid var(--line);
+  border-radius: 999px; padding: 0 8px; font-size: 12px; }
+.sim-area-sub { font-size: 11.5px; }
+.sim-tok { position: absolute; left: 0; top: 0; width: 54px; height: 20px; box-sizing: border-box; padding: 0 4px; border-radius: 5px; border: 0;
+  font: 600 11px/20px var(--font); text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; color: #fff;
+  box-shadow: 0 1px 3px rgba(29,22,40,.25); transition: transform .45s cubic-bezier(.3,.7,.3,1), opacity .35s; z-index: 2; }
+.sim-tok.st-wip { background: var(--st-wip); }
+.sim-tok.st-semi_finished { background: var(--st-semi); }
+.sim-tok.st-finished { background: var(--st-fin); }
+:root[data-theme="dark"] .sim-tok { color: #121016; }
+.sim-tok.sel { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); z-index: 3; }
+.sim-tok.dim { filter: grayscale(.8); }
+.sim-tok:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.sim-panel, .sim-detail { padding: 12px 14px; }
+.sim h4 { margin: 0 0 6px; font-size: 13.5px; }
+.sim-detail h4 { margin-top: 10px; }
+.sim-detail-head, .sim-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.sim-panel-head h4 { margin: 0; }
+.sim-detail .btn { margin-top: 10px; }
+.sim-kv { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid var(--line); }
+.sim-kv > span:first-child { color: var(--text-2); }
+.sim-journey { margin: 0; padding-inline-start: 18px; display: flex; flex-direction: column; gap: 4px; }
+.sim-journey li { display: flex; flex-direction: column; }
+.sim-journey li.past { color: var(--text-3); }
+.sim-journey li.cur { font-weight: 600; color: var(--brand); }
+.sim-table th, .sim-table td { padding: 5px 6px; font-size: 12.5px; }
+.sim-table tr.mat-short td:first-child { box-shadow: inset 3px 0 0 var(--danger); }
+.sim-table tr.mat-quarantine td:first-child { box-shadow: inset 3px 0 0 var(--saffron); }
+@media (prefers-reduced-motion: reduce) { .sim-tok { transition: opacity .2s; } }
+.sim-nextline { color: var(--text-3); }
+.sim-card-name { margin-top: 2px; }

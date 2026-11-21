@@ -131,6 +131,7 @@ API_ROUTES = [
     Route("/api/sites/{site_id}/plans", plans.list_plans, methods=["GET"]),
     Route("/api/sites/{site_id}/plans", plans.create_plan, methods=["POST"]),
     Route("/api/plans/{plan_id}", plans.get_plan, methods=["GET"]),
+    Route("/api/plans/{plan_id}/simulation", plans.plan_simulation, methods=["GET"]),
     Route("/api/plans/{plan_id}", plans.update_plan, methods=["PATCH"]),
     Route("/api/plans/{plan_id}", plans.delete_plan, methods=["DELETE"]),
     Route("/api/plans/{plan_id}/export", plans.export_plan, methods=["GET"]),

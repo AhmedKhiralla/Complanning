@@ -134,6 +134,19 @@ def _store(call: Call, pid, model, sched) -> dict:
             call.tenant_id, pid, ids[o.batch.key], o.step.seq, o.step.name, o.machine.id, as_utc(o.co_start), as_utc(o.co_end),
             round(o.co_minutes, 2), round(o.co_wait, 2), o.co_kind, o.co_verification, round(o.reclean_minutes, 2),
             as_utc(o.start), as_utc(o.end), round(o.run_minutes, 2), o.locked)
+    used = set()
+    for bt in model.batches:
+        if bt.key not in sched.done:
+            continue
+        for iid, q in bt.materials:
+            used.add(iid)
+            call.tx.x("INSERT INTO plan_batch_materials (tenant_id, plan_id, batch_id, item_id, quantity) VALUES (%s, %s, %s, %s::uuid, %s)",
+                      call.tenant_id, pid, ids[bt.key], iid, round(q, 3))
+    pools = {iid: {"released": round(pl["released"], 3), "quarantine": round(pl["quarantine"], 3),
+                   "quarantine_ready": as_utc(pl["quarantine_ready"]), "arrival": as_utc(pl["arrival"]),
+                   "has_lead": pl["has_lead"], "unlimited": bool(model.items[iid].get("not_stock_controlled"))}
+             for iid, pl in model.pools.items() if iid in used}
+    call.tx.x("UPDATE plans SET material_pools = %s::jsonb WHERE id = %s", json.dumps(pools, default=_json), pid)
     for bt in model.batches:
         for sup, q in bt.suppliers:
             call.tx.x("INSERT INTO plan_links (tenant_id, plan_id, supplier_id, consumer_id, quantity) VALUES (%s, %s, %s, %s, %s)",
@@ -167,6 +180,23 @@ def _json(o):
     if isinstance(o, (dt.datetime, dt.date)):
         return o.isoformat().replace("+00:00", "Z")
     raise TypeError(type(o).__name__)
+
+
+@endpoint(auth="tenant_user")
+def plan_simulation(call: Call):
+    """Material data for the plan simulation: what each batch uses and the stock the plan started from."""
+    p = _plan(call, call.path["plan_id"])
+    require_plan(call, p["site_id"])
+    pools = call.tx.val("SELECT material_pools FROM plans WHERE id = %s", p["id"])
+    rows = call.tx.q("SELECT batch_id, item_id, quantity FROM plan_batch_materials WHERE plan_id = %s", p["id"])
+    ids = sorted({str(r["item_id"]) for r in rows} | set((pools or {}).keys()))
+    items = {}
+    if ids:
+        for r in call.tx.q("SELECT i.id, i.code, i.name_en, i.name_ar, i.type, u.code AS uom FROM items i"
+                           " JOIN uoms u ON u.id = i.stock_uom_id WHERE i.id = ANY(string_to_array(%s, ',')::uuid[])", ",".join(ids)):
+            items[str(r["id"])] = {"code": r["code"], "name_en": r["name_en"], "name_ar": r["name_ar"], "type": r["type"], "uom": r["uom"]}
+    return {"available": pools is not None, "pools": pools or {}, "items": items,
+            "materials": [{"batch_id": str(r["batch_id"]), "item_id": str(r["item_id"]), "quantity": float(r["quantity"])} for r in rows]}
 
 
 @endpoint(auth="tenant_user")

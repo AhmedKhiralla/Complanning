@@ -266,3 +266,23 @@ def test_inactive_item_still_in_active_bom(co):
     assert status == 200, p
     assert any(w["kind"] == "inactive_item" and w["code"] == "SF-PCM-BLS" for w in p["kpis"]["warnings"])
     assert a.patch(f"/api/items/{bls['id']}", {"active": True})[0] == 200
+
+
+def test_simulation_materials(co):
+    """The simulation gets the bought materials of each batch and the stock the plan started from."""
+    start = dt.date.today()
+    status, p, _ = co["admin"].post(f"/api/sites/{co['sid']}/plans", {
+        "objective": "on_time", "horizon_start": start.isoformat(), "horizon_end": (start + dt.timedelta(days=45)).isoformat()})
+    assert status == 200, p
+    plan = co["admin"].get(f"/api/plans/{p['id']}")[1]
+    status, sim, _ = co["admin"].get(f"/api/plans/{plan['id']}/simulation")
+    assert status == 200, sim
+    assert sim["available"] is True and sim["materials"] and sim["pools"]
+    batch_ids = {b["id"] for b in plan["batches"] if b["status"] == "scheduled"}
+    assert {m["batch_id"] for m in sim["materials"]} <= batch_ids
+    for m in sim["materials"]:
+        assert m["quantity"] > 0 and m["item_id"] in sim["items"] and m["item_id"] in sim["pools"]
+        assert sim["items"][m["item_id"]]["type"] in ("raw_material", "packaging")
+    # Only bought materials go to the simulation: produced items move as batches.
+    pool = next(iter(sim["pools"].values()))
+    assert {"released", "quarantine", "arrival", "unlimited"} <= set(pool)

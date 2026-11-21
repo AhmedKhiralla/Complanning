@@ -316,6 +316,7 @@ def create_orders(call: Call):
     if p["status"] != "released":
         raise ApiError(409, "not_released", "Release the plan before issuing production orders, so orders follow the official plan.")
     b: CreateIn = call.body
+    O.ensure_templates(call.tx, call.tenant_id)
     tpls = {}
     for kind in b.kinds:
         tid = (b.template_ids or {}).get(kind)

@@ -568,6 +568,7 @@ With enough capacity all three often give the same result. They differ when mach
 Tabs:
 
 - **Schedule:** one row per machine, grouped by area. Coloured bars are steps, coloured by cleaning group; lighter shades are lower levels (WIP lighter than finished). Grey hatching is cleaning and format change, orange hatching is waiting for results, red hatching is planned downtime. Fridays (non-working days) are shaded. **Month, Week, Day** zoom. Hover a bar for its details; click it to highlight the batch and every batch linked to it, and to open its details below: steps, machines, changeovers, times, what it is made from, what it is used in and which deliveries it serves.
+- **Simulation:** the plan played back on a picture of the factory (11.5).
 - **Deliveries:** each sales plan line with the **Requested** quantity, the **Planned** quantity (and the cut, if capped or rounded; stock used), the quantity **Ready by due date** with a fill bar and percentage and the late quantity, the batches, when it is available, its status (**On time**, **Late** by hours or days, or **Not planned**) and **OTIF**: **Yes** when the whole request is ready by the due date, **Partial** when only part is, **Short** when it is on time but less than requested, **No** when nothing is ready in time. A total row adds up the quantities when all lines use the same unit.
 - **Batches:** batch numbers (B001 onwards, in start order), quantities, start, end and release times. Click one to see it on the schedule.
 - **Warnings:** everything the plan could not satisfy (11.4).
@@ -587,6 +588,27 @@ Tabs:
 | … batches end after the horizon | Work runs past the horizon end | Lengthen the horizon, or add capacity |
 | The site has no shifts | Planned around the clock | Set up the working calendar |
 | Lock warnings | See section 12 |  |
+
+### 11.5 Simulation
+
+The **Simulation** tab plays the plan back on the factory so you can watch it happen. It replays exactly what the plan says (the same times as the Schedule); nothing random is added.
+
+**The floor.** Machines are laid out automatically: one column per area, in the order products pass through them (bulk steps first, then semi-finished, then finished), with dashed arrows showing which machine delivers to which. Below are three areas: **Warehouse** (released bulk, semi-finished and finished goods waiting for the next stage or for shipping), **QC quarantine** (waiting for QC release or the holding time) and **Dispatch** (shipped). Each batch is a small tile with its batch number, coloured by stage: blue for bulk (WIP), teal for semi-finished, purple for finished.
+
+**Machine colours.** Green: running, with a progress bar. Orange hatching: cleaning or changeover, with the batch it prepares for. Red: planned downtime. White: idle, with the next batch and when it starts. Tiles under a machine are batches waiting for that step; **+N more** when there are more than fit.
+
+**The clock and controls.** The date and time at the top is the plan time shown. **Play / Pause**, **Play backwards**, **Previous / Next event** (jumps to the next moment something changes), **Go to the start / end**, and **Speed** from 1 hour to 3 days per second. Drag the slider to jump to any moment. Keyboard: Space plays or pauses, the arrow keys go to the previous or next event.
+
+**Click a batch** to see where it is now and its journey: each step, each wait and how long, when it goes to QC, the warehouse and the next stage or dispatch, what it is made from and what it feeds (the linked batches stay highlighted). **Show in schedule** opens it on the Schedule. **Click a machine** to see its state, the batch on it, the batches waiting, how busy it has been so far, and the next batches.
+
+**Analysis under the floor**, always for the moment on the clock:
+
+- **Batches now:** for bulk, semi-finished and finished, how many are not started, on machines, waiting between steps, in QC, in the warehouse, and used or shipped.
+- **Deliveries so far:** sales plan lines ready to ship by now, on time and late.
+- **Waiting time:** average hours per batch waiting between steps, in QC and holding, and in the warehouse before the next stage or shipping, per stage. **Up to now** counts the time so far; **Whole plan** the full plan.
+- **Materials:** for each bought material, the stock the plan started from minus what the batches started so far have used. Red: short (with the quantity and the earliest arrival). Orange: uses stock still in quarantine. Plans made with **Respect material availability** off show shortages for information only.
+
+Material flow needs plans made or re-planned from version 0.13; for older plans, click **Re-plan**.
 
 ## 12. Editing, releasing, comparing plans and production orders
 

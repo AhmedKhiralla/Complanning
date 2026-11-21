@@ -5,6 +5,7 @@ import { demandAr, demandEn } from "./strings_demand";
 import { plansAr, plansEn } from "./strings_plans";
 import { guideAr, guideEn } from "./strings_guide";
 import { ordersAr, ordersEn } from "./strings_orders";
+import { simAr, simEn } from "./strings_sim";
 
 const enBase = {
   "app.name": "Complanning",
@@ -389,7 +390,7 @@ const enBase = {
   "forbidden.body": "Ask your company administrator for the role you need.",
 };
 
-export const en = { ...enBase, ...masterEn, ...rulesEn, ...demandEn, ...plansEn, ...guideEn, ...ordersEn };
+export const en = { ...enBase, ...masterEn, ...rulesEn, ...demandEn, ...plansEn, ...guideEn, ...ordersEn, ...simEn };
 export type StringKey = keyof typeof en;
 
 const arBase: Record<keyof typeof enBase, string> = {
@@ -762,4 +763,4 @@ const arBase: Record<keyof typeof enBase, string> = {
   "forbidden.body": "اطلب من مسؤول شركتك الدور المناسب.",
 };
 
-export const ar: Record<StringKey, string> = { ...arBase, ...masterAr, ...rulesAr, ...demandAr, ...plansAr, ...guideAr, ...ordersAr };
+export const ar: Record<StringKey, string> = { ...arBase, ...masterAr, ...rulesAr, ...demandAr, ...plansAr, ...guideAr, ...ordersAr, ...simAr };
