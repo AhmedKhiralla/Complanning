@@ -1299,3 +1299,16 @@ body:has(.ai-fab) .content { padding-bottom: 96px; }
 @media (prefers-reduced-motion: reduce) { .sim-tok { transition: opacity .2s; } }
 .sim-nextline { color: var(--text-3); }
 .sim-card-name { margin-top: 2px; }
+/* The batch on the machine stands out; batches waiting for the machine are drawn as outlines. */
+.sim-tok.is-run { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ok), 0 2px 6px rgba(29,22,40,.3); animation: sim-run 1.6s ease-in-out infinite; }
+.sim-tok.is-run::before { content: "▶ "; font-size: 8px; vertical-align: 1px; }
+@keyframes sim-run { 50% { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ok), 0 0 12px 2px color-mix(in srgb, var(--ok) 55%, transparent); } }
+.sim-tok.is-wait { background: var(--surface); box-shadow: none; border: 1.5px dashed; }
+.sim-tok.is-wait.st-wip { color: var(--st-wip); border-color: var(--st-wip); }
+.sim-tok.is-wait.st-semi_finished { color: var(--st-semi); border-color: var(--st-semi); }
+.sim-tok.is-wait.st-finished { color: var(--st-fin); border-color: var(--st-fin); }
+.sim-tok.is-wait.sel, .sim-tok.is-run.sel { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+@media (prefers-reduced-motion: reduce) { .sim-tok.is-run { animation: none; } }
+.sim-key { display: inline-block; width: 22px; height: 12px; border-radius: 3px; margin-inline-end: 6px; vertical-align: -1px; }
+.sim-key.is-run { background: var(--text-2); box-shadow: 0 0 0 1.5px var(--surface), 0 0 0 3px var(--ok); }
+.sim-key.is-wait { border: 1.5px dashed var(--text-2); }

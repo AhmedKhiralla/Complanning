@@ -231,7 +231,7 @@ export function PlanSimulation({ plan, tz, onShowBatch }: { plan: PlanFull; tz: 
   const label = (x: SimBatch) => x.b.lot_no || x.b.batch_no;
   const stName = (s: Stage) => t(`sim.legend.${s}` as never);
   const hrs = (h: number) => dur(h * 60);
-  const tokenClass = (x: SimBatch) => `sim-tok st-${x.stage}${sel?.kind === "batch" && sel.id === x.b.id ? " sel" : ""}${chain && !chain.has(x.b.id) ? " dim" : ""}`;
+  const tokenClass = (x: SimBatch) => `sim-tok st-${x.stage}${({ run: " is-run", queue: " is-wait" } as Partial<Record<LocKind, string>>)[where.get(x.b.id)!.kind] ?? ""}${sel?.kind === "batch" && sel.id === x.b.id ? " sel" : ""}${chain && !chain.has(x.b.id) ? " dim" : ""}`;
 
   const locText = (w: Where) => {
     const m = w.machine ? machines.get(w.machine)?.code ?? "" : "";
@@ -290,6 +290,8 @@ export function PlanSimulation({ plan, tz, onShowBatch }: { plan: PlanFull; tz: 
         <div className="panel sim-floor-wrap">
           <div className="sim-legend small">
             {STAGES.map((s) => <span key={s}><i className={`sim-dot st-${s}`} />{stName(s)}</span>)}
+            <span><i className="sim-key is-run" />{t("sim.legend.run")}</span>
+            <span><i className="sim-key is-wait" />{t("sim.legend.wait")}</span>
             <span><i className="sim-dot m-running" />{t("sim.st.running")}</span>
             <span><i className="sim-dot m-changeover" />{t("sim.st.changeover")}</span>
             <span><i className="sim-dot m-down" />{t("sim.st.down")}</span>
@@ -343,7 +345,7 @@ export function PlanSimulation({ plan, tz, onShowBatch }: { plan: PlanFull; tz: 
               return (
                 <button key={x.b.id} type="button" className={tokenClass(x)} tabIndex={p.show ? 0 : -1} aria-hidden={!p.show}
                   style={{ transform: `translate(${X(p.x, TOK_W)}px, ${p.y}px)`, opacity: p.show ? (chain && !chain.has(x.b.id) ? 0.35 : 1) : 0, pointerEvents: p.show ? undefined : "none" }}
-                  title={`${label(x)} · ${x.b.code}`} onClick={() => setSel({ kind: "batch", id: x.b.id })}>{label(x)}</button>
+                  title={`${label(x)} · ${x.b.code} · ${locText(where.get(x.b.id)!)}`} onClick={() => setSel({ kind: "batch", id: x.b.id })}>{label(x)}</button>
               );
             })}
           </div>
